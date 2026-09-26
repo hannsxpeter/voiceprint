@@ -47,3 +47,9 @@ edit a vendored file. Detection and rewrite criteria are canonical in the
 humanizer repo, scoring logic in the authenticity-check repo. Fixes go
 upstream and are re-synced via `scripts/sync-upstream`; each file's header
 stamp is the contract. See `README.md` for the full sync procedure.
+
+<!-- godpowers:begin -->
+## Godpowers project
+
+This project uses Godpowers. See `AGENTS.md` for the project context.
+<!-- godpowers:end -->

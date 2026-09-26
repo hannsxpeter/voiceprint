@@ -1,4 +1,4 @@
-# voiceprint (Gemini CLI context)
+# voiceprint (GitHub Copilot instructions)
 
 <!-- Implements: P-MUST-01, P-MUST-05, P-MUST-06, P-MUST-07, P-MUST-08, P-MUST-09 -->
 
@@ -8,10 +8,10 @@ skills, authenticity-check (diagnose) and humanizer (rewrite), in a fixed
 order, exactly once, with one deterministic Unicode hygiene operation inside
 the transformation stage.
 
-When the user wants the combined intent in one step (clean this up and verify
-it, make this authentic and tell me how it scored, de-slop this then check it,
-humanize and then check, or "voiceprint this"), act as this skill, even if
-they do not say "voiceprint." Do not apply it to a one-sided request: a pure
+When a request is the combined intent (clean this up and verify it, make this
+authentic and tell me how it scored, de-slop this then check it, humanize and
+then check, or "voiceprint this"), follow this skill. Apply it even when the
+word "voiceprint" is not used. Do not apply it to a one-sided request: a pure
 rewrite is the standalone humanizer skill, a pure score is the standalone
 authenticity-check skill. voiceprint is the union, not a substitute. For a
 half-request, serve only that half and stop: use the standalone skill if
@@ -19,8 +19,8 @@ installed, otherwise follow the matching vendored copy directly
 (`vendor/humanizer/` for rewrite-only, `vendor/authenticity-check/` for
 score-only), never a half-empty voiceprint pass.
 
-Read `SKILL.md` at the repo root and follow it exactly. Run three steps in
-order, once each: (1) diagnose the immutable original by reading
+Read `SKILL.md` at the repository root and follow it exactly. Run three steps
+in order, once each: (1) diagnose the immutable original by reading
 `vendor/authenticity-check/SKILL.md`, carrying out no target score; (2) run
 `python3 scripts/text_hygiene.py clean --stats` once, preferring standard input
 for pasted text, then pass its cleaned working copy to one invocation of
@@ -47,3 +47,9 @@ edit a vendored file. Detection and rewrite criteria are canonical in the
 humanizer repo, scoring logic in the authenticity-check repo. Fixes go
 upstream and are re-synced via `scripts/sync-upstream`; each file's header
 stamp is the contract. See `README.md` for the full sync procedure.
+
+<!-- godpowers:begin -->
+## Godpowers project
+
+This project uses Godpowers. See `AGENTS.md` for the project context.
+<!-- godpowers:end -->

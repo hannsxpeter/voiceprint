@@ -17,7 +17,7 @@ description: >-
 license: MIT
 allowed-tools: Read Glob Grep
 compatibility: >-
-  Requires Python 3.10 or newer for scripts/text_hygiene.py. Ships adapters
+  Requires Python 3.11 or newer for scripts/text_hygiene.py. Ships adapters
   for Claude Code, Cursor, Codex, Antigravity, Gemini CLI, Pi, OpenCode, and
   GitHub Copilot.
 metadata:
@@ -97,7 +97,7 @@ out of it.
 
 At the start of this step, run the immutable original through
 `python3 scripts/text_hygiene.py clean --stats` exactly once, resolving the
-script relative to this `SKILL.md`. Python 3.10 or newer is required. For
+script relative to this `SKILL.md`. Python 3.11 or newer is required. For
 pasted text, prefer the command's standard input and pass the original bytes
 through the host process-input facility. Never interpolate pasted text into a
 shell command, including a heredoc: a line in the draft that matches the

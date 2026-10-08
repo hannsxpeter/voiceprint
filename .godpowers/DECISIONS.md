@@ -51,3 +51,28 @@ Why: Every default-ignorable code point is now at least visible in the manifest,
 Context: humanizer published two CI-only commits after v1.3.0. The freshness check compared commit SHAs, so it would have warned on every push and failed the weekly run although no vendored byte would change, and re-syncing for that only churns stamps.
 Decision: When upstream has moved, `scripts/check-upstream-freshness` asks the compare API which files changed since the stamp and reports a re-sync as due only if `SKILL.md` or a `references/` file changed, renames included (a truncated file list counts as changed), or if the stamp is not an ancestor of the branch. Re-syncs follow real content changes, such as the version line in humanizer v1.3.1.
 Why: The guard should fire exactly when the vendored content would change, so its warnings stay worth reading.
+
+## 2026-10-08: Keep typographic spaces only in fixed contexts (hygiene policy 3)
+Context: Policy 2 normalized every no-break and ideographic space, which breaks French punctuation, thousands separators, number and unit pairs, and CJK spacing. A no-break space at an arbitrary word gap, though, looks like any other space and is a known way to hide a mark.
+Decision: Keep U+00A0 and U+202F inside a number, between a number and the unit, symbol, or word after it, before French closing punctuation, and after French opening guillemets; keep U+2007 only inside a number; keep U+3000 only in a run that touches CJK text, where invisible Hangul fillers do not count. Normalize every other no-break or width-specific space, including spaces after one-letter words in Czech or Polish.
+Why: These are the places where typography visibly depends on the character, and limiting preservation to them bounds how much a hidden mark could carry.
+
+## 2026-10-08: Keep a directional mark only where removing it changes the display (hygiene policy 3)
+Context: Policy 2 removed every left-to-right, right-to-left, and Arabic letter mark, which breaks mixed-direction text. Keeping every mark would leave an invisible channel, and a first rule that kept marks beside neutral characters let no-op marks survive at most word boundaries in right-to-left text.
+Decision: The helper judges only marks in a paragraph with right-to-left letters, and only the first mark of each run not followed by a combining mark. The helper applies bidi rules P2, L2, N1, and N2 against the letters and the remaining marks, and removes a mark whose removal shows no change. Judging repeats in alternating directions until a pass removes nothing, capped at 8 passes. A mark sharing the stretch between two letters with a number, bracket, or tab stays, because rules W1 to W7, N0, and L1 are not modeled. Every mark in a paragraph without right-to-left letters is removed.
+Why: Each removal leaves the display unchanged, so cleanup never alters how a paragraph displays apart from collapsing runs and dropping marks before combining marks. GNU FriBidi agreed on all 52,828 random mixed-direction paragraphs, and an opt-in test repeats the check. Invisible marks survive only where they do visible work or where the helper cannot rule that out.
+
+## 2026-10-08: Always remove directional embeddings, overrides, and isolates
+Context: humanizer's text-hygiene guidance preserves isolates that make mixed-direction text display correctly, and policy 3 now keeps load-bearing marks.
+Decision: Policy 3 still removes U+202A to U+202E and U+2066 to U+2069 everywhere.
+Why: They reorder whole spans, which is how Trojan Source attacks make text display in a different order from the one it is stored in, and judging an isolate pair needs isolating run sequences the helper does not model. A directional mark covers the common mixed-direction needs.
+
+## 2026-10-08: Raise the documented Python minimum to 3.11
+Context: Python 3.10, the documented minimum that CI tested, reaches end of life in October 2026.
+Decision: SKILL.md, README, and CONTRIBUTING.md state 3.11, CI tests 3.11 and 3.14, the "Protect main" ruleset requires both jobs, and a repository test keeps every statement of the minimum the same as the CI matrix.
+Why: The documented minimum should be a supported Python that CI actually tests, and the test stops the documents and CI from drifting apart again.
+
+## 2026-10-08: Keep maintainer workflow out of the end-user adapter
+Context: AGENTS.md is the file Codex, Antigravity, OpenCode, and Pi read when they run the skill, but it carried the Godpowers block, whose `npx -y godpowers@7` returns 404 because Godpowers 7 is not on public npm.
+Decision: Maintainer guidance (checks, opt-in checks, syncing, releases, project state) lives in CONTRIBUTING.md and uses the locally installed Godpowers 7 CLI. AGENTS.md keeps a one-line pointer, and a repository test keeps every adapter free of Godpowers instructions so a future `godpowers init` cannot quietly add the block back.
+Why: Users' tools should see only the skill's instructions, and maintainers get a command that works.

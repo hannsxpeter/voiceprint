@@ -5,6 +5,40 @@ to semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Text hygiene policy version 3 (manifests report `"policy_version": 3`)
+  keeps the typographic spaces and directional marks that policy 2 always
+  normalized or removed, and reports why in each kept character's `reason`:
+  - A no-break space (U+00A0) or narrow no-break space (U+202F) stays inside
+    a number, between a number and the unit, symbol, or word after it, before
+    French closing punctuation, and after French opening guillemets. A figure
+    space (U+2007) stays inside a number, and an ideographic space (U+3000)
+    in a run that touches CJK text. Every other no-break or width-specific
+    space is still normalized.
+  - A left-to-right, right-to-left, or Arabic letter mark stays only in a
+    paragraph with right-to-left letters, and only where removing it would
+    change the display under the Unicode Bidirectional Algorithm (it sets the
+    paragraph direction, splits a run of letters, or changes the direction of
+    neighboring spaces and punctuation) or where a number, bracket, or tab
+    shares its stretch. A run keeps at most its first mark, and a mark before
+    a combining mark is removed. Embeddings, overrides, and isolates are
+    still always removed.
+- Python 3.11 is the documented minimum, and CI tests 3.11 and 3.14, because
+  Python 3.10 reaches end of life in October 2026.
+- The maintainer Godpowers note moved out of `AGENTS.md`, which users' tools
+  read when they run the skill, into the new `CONTRIBUTING.md`, which also
+  replaces the note's unpublished `npx -y godpowers@7` command with the
+  locally installed Godpowers CLI.
+
+### Added
+
+- An opt-in check of the directional-mark rule against GNU FriBidi
+  (`VOICEPRINT_FRIBIDI=1`), eval 14 for typographic spaces, and repository
+  tests that keep the documented Python minimum consistent, keep adapters
+  free of maintainer workflow, and keep the repository's own text free of
+  characters the hygiene helper would act on.
+
 ## [1.5.2] - 2026-10-08
 
 ### Changed

@@ -6,10 +6,14 @@ import json
 import math
 import os
 from pathlib import Path
+import random
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import unittest
 from unittest import mock
 
@@ -23,6 +27,20 @@ EXPECTED_INPUT_CAP = 4 * 1024 * 1024
 UNICODE_DATA_DIR = os.environ.get("VOICEPRINT_UNICODE_DATA_DIR")
 VARIATION_REASON = "{}-presentation selector in a pinned Emoji 17 variation sequence"
 TAG_REASON = "part of a pinned Emoji 17 tag sequence"
+NUMBER_SPACE_REASON = "no-break space inside a number"
+UNIT_SPACE_REASON = "no-break space between a number and a unit, symbol, or word"
+FRENCH_SPACE_REASON = "no-break space at French punctuation or quotation marks"
+CJK_SPACE_REASON = "ideographic space beside CJK text"
+SETS_DIRECTION_REASON = "directional mark that sets its paragraph's direction"
+SPLITS_RUN_REASON = "directional mark that splits a run of opposite-direction letters"
+NEUTRALS_REASON = (
+    "directional mark that changes the direction of nearby punctuation or spaces"
+)
+CONSERVATIVE_REASON = (
+    "directional mark near a number, bracket, or tab, kept conservatively"
+)
+HEBREW_SHALOM = "\u05e9\u05dc\u05d5\u05dd"
+HEBREW_OLAM = "\u05e2\u05d5\u05dc\u05dd"
 
 
 def finding(manifest, code_point, action):
@@ -495,7 +513,7 @@ class TextHygieneApiTests(unittest.TestCase):
                 "actionable": 0,
             },
         )
-        self.assertEqual(manifest["policy_version"], 2)
+        self.assertEqual(manifest["policy_version"], 3)
         self.assertEqual(manifest["unicode_version"], text_hygiene.unicodedata.unidata_version)
         self.assertEqual(manifest["emoji_zwj_version"], "17.0")
 
@@ -525,6 +543,382 @@ class TextHygieneApiTests(unittest.TestCase):
             0.200,
             f"100,000-code-point p95 was {p95:.3f}s, expected at most 0.200s",
         )
+
+
+class TypographyAndDirectionTests(unittest.TestCase):
+    """Hygiene policy 3: typographic spaces and directional marks."""
+
+    def test_preserves_no_break_spaces_inside_numbers(self):
+        source = "10\u00a0000, 2\u202f500 and 7\u2007000"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        for code_point in ("U+00A0", "U+202F", "U+2007"):
+            self.assertEqual(
+                finding(manifest, code_point, "preserve")["reason"],
+                NUMBER_SPACE_REASON,
+            )
+        self.assertEqual(manifest["summary"]["preserved"], 3)
+        self.assertEqual(manifest["summary"]["actionable"], 0)
+
+    def test_preserves_no_break_space_between_number_and_unit(self):
+        source = "5\u00a0km, 12\u202f%, 30\u00a0\u20ac, 3\u00a0pommes"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(
+            finding(manifest, "U+00A0", "preserve"),
+            {
+                "code_point": "U+00A0",
+                "name": "NO-BREAK SPACE",
+                "action": "preserve",
+                "count": 3,
+                "offsets": [1, 14, 19],
+                "reason": UNIT_SPACE_REASON,
+            },
+        )
+        self.assertEqual(
+            finding(manifest, "U+202F", "preserve")["reason"], UNIT_SPACE_REASON
+        )
+        # A figure space belongs inside numbers only.
+        self.assertEqual(clean_text("5\u2007km")[0], "5 km")
+
+    def test_preserves_no_break_spaces_at_french_punctuation(self):
+        source = (
+            "\u00ab\u00a0Bonjour\u202f!\u00a0\u00bb Vraiment\u202f? "
+            "Oui\u00a0: non\u202f;"
+        )
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        nbsp = finding(manifest, "U+00A0", "preserve")
+        narrow = finding(manifest, "U+202F", "preserve")
+        self.assertEqual(nbsp["offsets"], [1, 11, 28])
+        self.assertEqual(narrow["offsets"], [9, 22, 34])
+        self.assertEqual({nbsp["reason"], narrow["reason"]}, {FRENCH_SPACE_REASON})
+
+    def test_normalizes_no_break_spaces_outside_typographic_contexts(self):
+        source = "here\u00a0today, word\u00a0\u00a0! and 5\u00a0\u00a0km or \u00a0x"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "here today, word  ! and 5  km or  x")
+        self.assertEqual(finding(manifest, "U+00A0", "normalize")["count"], 6)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_preserves_ideographic_space_beside_cjk_text(self):
+        source = "\u3000\u65e5\u672c\u8a9e\u3000\u3000\u6587\u7ae0"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(
+            finding(manifest, "U+3000", "preserve"),
+            {
+                "code_point": "U+3000",
+                "name": "IDEOGRAPHIC SPACE",
+                "action": "preserve",
+                "count": 3,
+                "offsets": [0, 4, 5],
+                "reason": CJK_SPACE_REASON,
+            },
+        )
+        # An invisible Hangul filler is not CJK text.
+        self.assertEqual(clean_text("a\u3000\u3164")[0], "a \u3164")
+
+    def test_paragraph_separators_match_bidi_class_b(self):
+        separators = {
+            chr(code_point)
+            for code_point in range(0x110000)
+            if unicodedata.bidirectional(chr(code_point)) == "B"
+        }
+
+        self.assertEqual(set(text_hygiene._PARAGRAPH_SEPARATORS), separators)
+
+    def test_removes_marks_from_paragraphs_without_right_to_left_letters(self):
+        source = "Hello\u200e world\u200f! \u061c(1)\n\u200fHello!\u061c"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "Hello world! (1)\nHello!")
+        self.assertEqual(manifest["summary"]["removed"], 5)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_keeps_mark_that_sets_paragraph_direction(self):
+        source = "\u200fPython \u05d4\u05d9\u05d0 \u05e9\u05e4\u05d4"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        kept = finding(manifest, "U+200F", "preserve")
+        self.assertEqual(kept["offsets"], [0])
+        self.assertEqual(kept["reason"], SETS_DIRECTION_REASON)
+        # The paragraph is already right to left without it.
+        self.assertEqual(clean_text("\u200f" + HEBREW_SHALOM)[0], HEBREW_SHALOM)
+
+    def test_keeps_mark_that_changes_direction_of_neighboring_punctuation(self):
+        source = HEBREW_SHALOM + " Hello!\u200e"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        kept = finding(manifest, "U+200E", "preserve")
+        self.assertEqual(kept["offsets"], [11])
+        self.assertEqual(kept["reason"], NEUTRALS_REASON)
+        # The "!" already takes the paragraph's direction without this one.
+        self.assertEqual(
+            clean_text(HEBREW_SHALOM + " Hello!\u200f")[0], HEBREW_SHALOM + " Hello!"
+        )
+
+    def test_keeps_mark_that_splits_a_run_of_opposite_direction_letters(self):
+        source = "Hello \u05d0\u05d1\u200e\u05d2\u05d3"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(
+            finding(manifest, "U+200E", "preserve")["reason"], SPLITS_RUN_REASON
+        )
+        # Letters keep their own direction, so between two letters of the
+        # paragraph's direction a mark changes nothing.
+        self.assertEqual(
+            clean_text("\u05d0\u05d1\u200f\u05d2\u05d3")[0],
+            "\u05d0\u05d1\u05d2\u05d3",
+        )
+
+    def test_judges_a_mark_between_words_by_the_paragraph_direction(self):
+        right_to_left = clean_text(HEBREW_SHALOM + "\u200e " + HEBREW_OLAM)
+        left_to_right = clean_text("Hello " + HEBREW_SHALOM + "\u200e " + HEBREW_OLAM)
+
+        self.assertEqual(right_to_left[0], HEBREW_SHALOM + " " + HEBREW_OLAM)
+        self.assertEqual(
+            finding(left_to_right[1], "U+200E", "preserve")["reason"], NEUTRALS_REASON
+        )
+
+    def test_keeps_only_the_first_mark_of_a_run(self):
+        source = HEBREW_SHALOM + " Hello!\u200e\u200e\u200b\u200f"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, HEBREW_SHALOM + " Hello!\u200e")
+        self.assertEqual(finding(manifest, "U+200E", "preserve")["offsets"], [11])
+        self.assertEqual(finding(manifest, "U+200E", "remove")["offsets"], [12])
+        self.assertEqual(finding(manifest, "U+200F", "remove")["offsets"], [14])
+
+    def test_rejudges_a_mark_after_a_later_mark_is_removed(self):
+        # The first pass keeps the Arabic letter mark because, with the
+        # left-to-right mark still in place, it sets the paragraph direction.
+        # Once that mark is removed the letter already does, so it goes too.
+        cleaned, manifest = clean_text("\u061c-\u200e\u05d1")
+
+        self.assertEqual(cleaned, "-\u05d1")
+        self.assertEqual(manifest["summary"]["removed"], 2)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_removes_mark_between_a_letter_and_its_combining_mark(self):
+        source = "Hello \u05d0\u200e\u05b8\u05d1"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "Hello \u05d0\u05b8\u05d1")
+        self.assertEqual(finding(manifest, "U+200E", "remove")["offsets"], [7])
+
+    def test_keeps_marks_near_numbers_brackets_or_tabs_conservatively(self):
+        for source in (
+            HEBREW_SHALOM + " \u200f-5",
+            HEBREW_SHALOM + " (Hello)\u200e",
+            HEBREW_SHALOM + "\t\u200e\u05d0",
+        ):
+            with self.subTest(source=hex_sequence(source)):
+                cleaned, manifest = clean_text(source)
+
+                self.assertEqual(cleaned, source)
+                self.assertEqual(manifest["summary"]["preserved"], 1)
+                kept = next(
+                    item
+                    for item in manifest["findings"]
+                    if item["action"] == "preserve"
+                )
+                self.assertEqual(kept["reason"], CONSERVATIVE_REASON)
+
+    def test_judges_right_to_left_text_per_paragraph(self):
+        source = "Hello!\u200e\r\n" + HEBREW_SHALOM + " Hello!\u200e\u2029Hello!\u200e"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(
+            cleaned, "Hello!\r\n" + HEBREW_SHALOM + " Hello!\u200e\u2029Hello!"
+        )
+        self.assertEqual(finding(manifest, "U+200E", "preserve")["offsets"], [20])
+        self.assertEqual(finding(manifest, "U+200E", "remove")["offsets"], [6, 28])
+
+    def test_still_removes_embeddings_overrides_and_isolates(self):
+        source = "\u05e9\u202bx\u202c\u202ey\u2066z\u2069"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "\u05e9xyz")
+        self.assertEqual(manifest["summary"]["removed"], 5)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+
+@unittest.skipUnless(
+    os.environ.get("VOICEPRINT_FRIBIDI") == "1" and shutil.which("fribidi"),
+    "set VOICEPRINT_FRIBIDI=1 with GNU FriBidi installed to run the bidi check",
+)
+class BidiReferenceTests(unittest.TestCase):
+    """Check directional-mark decisions against GNU FriBidi's bidi algorithm."""
+
+    MARKS = ("\u200e", "\u200f", "\u061c")
+    HIDDEN = frozenset(MARKS + ("\u200b",))
+    ALPHABET = (
+        "\u05d0\u05d1\u05d2\u05d3\u0627\u0628\u062a\u062b"
+        "abc12\u0661\u0662  .,!-+%()[]:/$\t\u05b8\u064e\u200b"
+    )
+
+    def displays(self, lines):
+        """Base direction, visible order, and mirroring for each line."""
+        output = subprocess.run(
+            [
+                "fribidi",
+                "--nopad",
+                "--nobreak",
+                "--basedir",
+                "--vtol",
+                "--levels",
+                "--novisual",
+            ],
+            input=("\n".join(lines) + "\n").encode("utf-8"),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout.decode("utf-8").split("\n")
+        shown = []
+        for index, line in enumerate(lines):
+            base, order, levels = output[3 * index : 3 * index + 3]
+            visible = [
+                i for i, character in enumerate(line) if character not in self.HIDDEN
+            ]
+            rank = {position: number for number, position in enumerate(visible)}
+            level = [int(value) for value in levels.split()]
+            shown.append(
+                (
+                    base,
+                    [rank[int(value)] for value in order.split() if int(value) in rank],
+                    [level[i] % 2 for i in visible if unicodedata.mirrored(line[i])],
+                )
+            )
+        return shown
+
+    def reference(self, text):
+        """The text with every removal applied except judging single marks."""
+        kept = []
+        for index, character in enumerate(text):
+            if character == "\u200b":
+                continue
+            if character in self.MARKS:
+                before = index - 1
+                while before >= 0 and text[before] == "\u200b":
+                    before -= 1
+                after = index + 1
+                while after < len(text) and text[after] in self.HIDDEN:
+                    after += 1
+                if (before >= 0 and text[before] in self.MARKS) or (
+                    after < len(text)
+                    and unicodedata.bidirectional(text[after]) == "NSM"
+                ):
+                    continue
+            kept.append(character)
+        return "".join(kept)
+
+    def test_cleanup_never_changes_display_and_kept_marks_matter(self):
+        generator = random.Random(2026)
+        pairs = []
+        for _ in range(4000):
+            characters = [
+                generator.choice(self.ALPHABET) for _ in range(generator.randint(2, 24))
+            ]
+            for _ in range(generator.randint(1, 5)):
+                characters.insert(
+                    generator.randint(0, len(characters)), generator.choice(self.MARKS)
+                )
+            text = "".join(characters)
+            if not any(
+                unicodedata.bidirectional(character) in ("R", "AL")
+                for character in text
+                if character not in self.HIDDEN
+            ):
+                continue
+            cleaned, manifest = clean_text(text)
+            pairs.append(("unchanged", text, self.reference(text), cleaned))
+            removed = {
+                offset
+                for item in manifest["findings"]
+                if item["action"] == "remove"
+                for offset in item["offsets"]
+            }
+            for item in manifest["findings"]:
+                if item.get("reason") in (SETS_DIRECTION_REASON, SPLITS_RUN_REASON):
+                    for offset in item["offsets"]:
+                        at = offset - sum(1 for other in removed if other < offset)
+                        pairs.append(
+                            ("changed", text, cleaned, cleaned[:at] + cleaned[at + 1 :])
+                        )
+
+        lines = [line for _, _, first, second in pairs for line in (first, second)]
+        shown = self.displays(lines)
+        failures = [
+            hex_sequence(text)
+            for index, (expected, text, _, _) in enumerate(pairs)
+            if (shown[2 * index] == shown[2 * index + 1]) != (expected == "unchanged")
+        ]
+
+        self.assertEqual(failures, [])
+        print(f"FriBidi check: {len(pairs)} display comparisons agree")
+
+
+class EvalFixtureTests(unittest.TestCase):
+    """Keep the hygiene numbers that evals promise in line with the helper."""
+
+    def test_hygiene_evals_match_the_helper(self):
+        evals = json.loads((ROOT / "evals" / "evals.json").read_text(encoding="utf-8"))
+        checked = 0
+        for case in evals["evals"]:
+            draft = case["prompt"].split(": ", 1)[-1]
+            if draft.isascii():
+                continue
+            checked += 1
+            manifest = inspect_text(draft)
+            located = {}
+            for item in manifest["findings"]:
+                located.setdefault(item["code_point"], set()).update(item["offsets"])
+            for expectation in case["expectations"]:
+                with self.subTest(eval_id=case["id"], expectation=expectation):
+                    counts = re.search(
+                        r"detected (\d+), removed (\d+), normalized (\d+),"
+                        r"(?: and)? deliberately preserved (\d+)",
+                        expectation,
+                    )
+                    if counts:
+                        self.assertEqual(
+                            [
+                                manifest["summary"][key]
+                                for key in ("detected", "removed", "normalized", "preserved")
+                            ],
+                            [int(value) for value in counts.groups()],
+                        )
+                    for code_point, offsets in re.findall(
+                        r"(U\+[0-9A-F]{4,6}) at offsets? (\d+(?:(?:,| and) \d+)*)",
+                        expectation,
+                    ):
+                        self.assertLessEqual(
+                            {int(value) for value in re.findall(r"\d+", offsets)},
+                            located.get(code_point, set()),
+                        )
+
+        self.assertGreaterEqual(checked, 4)
 
 
 class TextHygieneCliTests(unittest.TestCase):

@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.text_hygiene import inspect_text
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTERS = (
@@ -64,6 +66,15 @@ ALLOWED_FRONTMATTER_KEYS = {
     "name",
 }
 DISALLOWED_DASHES = {chr(0x2013): "U+2013", chr(0x2014): "U+2014"}
+# Every place that states the minimum Python, with a pattern capturing it.
+PYTHON_MINIMUM_STATEMENTS = (
+    ("SKILL.md", r"Requires Python (3\.\d+) or newer"),
+    ("SKILL.md", r"Python (3\.\d+) or newer is required"),
+    ("README.md", r"requires Python (3\.\d+) or newer"),
+    ("README.md", r"CI runs it on Python (3\.\d+), the documented minimum"),
+    ("CONTRIBUTING.md", r"Python (3\.\d+), the\s+documented minimum"),
+    (".github/workflows/vendor-sync-check.yml", r'python-version: \["(3\.\d+)"'),
+)
 
 
 def read(relative_path):
@@ -213,6 +224,36 @@ class RepositoryConsistencyTests(unittest.TestCase):
             for action in actions:
                 with self.subTest(workflow=workflow, action=action):
                     self.assertRegex(action, r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
+
+    def test_python_minimum_matches_across_docs_and_ci(self):
+        stated = {}
+        for name, pattern in PYTHON_MINIMUM_STATEMENTS:
+            match = re.search(pattern, read(name))
+            with self.subTest(name=name, pattern=pattern):
+                self.assertIsNotNone(match, f"{name} does not state the minimum")
+                stated[f"{name}: {pattern}"] = match.group(1)
+
+        self.assertEqual(len(set(stated.values())), 1, stated)
+
+    def test_adapters_carry_no_maintainer_workflow(self):
+        for adapter in ADAPTERS:
+            with self.subTest(adapter=adapter):
+                self.assertNotIn("godpowers", read(adapter).lower())
+
+    def test_tracked_text_passes_its_own_hygiene_check(self):
+        failures = []
+        for name in tracked_files():
+            path = ROOT / name
+            if name.startswith("vendor/") or not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            for item in inspect_text(text)["findings"]:
+                failures.append(f"{name}: {item['code_point']} at {item['offsets']}")
+
+        self.assertEqual(failures, [])
 
     def test_tracked_text_has_no_disallowed_dashes(self):
         failures = []

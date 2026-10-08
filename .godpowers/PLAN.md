@@ -38,4 +38,4 @@ files and no documentation drift.
 - [x] 6. Independent review and security pass, then ship v1.5.0: Godpowers ship gate, pull request CI on Python 3.10 and 3.14, tag, and GitHub release (PR #4 merged as d9c27a9, tag v1.5.0, release published).
 
 ## Open questions
-- Should hygiene preserve no-break spaces and directional marks when locale typography or mixed-direction text depends on them, as humanizer's text-hygiene guidance does? This is the maintainer's call; it is tracked as a low risk in STATE.md.
+- Resolved 2026-10-08: hygiene policy 3 preserves no-break spaces where locale typography depends on them and directional marks where mixed-direction display does (see DECISIONS.md), closing the low risk this plan left open.

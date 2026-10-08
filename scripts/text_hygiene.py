@@ -4,18 +4,21 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
 import json
 import os
+import re
 import stat
 import sys
 import unicodedata
+from typing import NamedTuple
 
 
 _JOINERS = {"\u200c", "\u200d"}
 _MONGOLIAN_VARIATION_SELECTORS = range(0x180B, 0x180E)
 _MONGOLIAN_VOWEL_SEPARATOR = 0x180E
 MAX_INPUT_BYTES = 4 * 1024 * 1024
-POLICY_VERSION = 2
+POLICY_VERSION = 3
 # Unicode Emoji version of every pinned emoji table below.
 EMOJI_ZWJ_VERSION = "17.0"
 _SCRIPT_FAMILY_RANGES = (
@@ -43,10 +46,7 @@ _SCRIPT_FAMILY_RANGES = (
 )
 _REMOVABLE_FORMAT_CODE_POINTS = {
     0x00AD,
-    0x061C,
     0x200B,
-    0x200E,
-    0x200F,
     0x202A,
     0x202B,
     0x202C,
@@ -92,6 +92,46 @@ _UNASSIGNED_DEFAULT_IGNORABLE_CODE_POINTS = frozenset(
 _INVISIBLE_LETTERS_AND_MARKS = frozenset(
     {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x3164, 0xFFA0}
 )
+# No-break spaces are kept only where they hold a number, a unit, or French
+# punctuation together. Elsewhere they are normalized: a no-break space looks
+# like any other space, so swapping one in at a word gap can hide a mark.
+_NO_BREAK_SPACES = frozenset({chr(0x00A0), chr(0x202F), chr(0x2007)})
+_FIGURE_SPACE = chr(0x2007)
+_IDEOGRAPHIC_SPACE = chr(0x3000)
+_FRENCH_CLOSING_PUNCTUATION = frozenset(
+    {"!", "?", ";", ":", chr(0x00BB), chr(0x203A)}
+)
+_FRENCH_OPENING_QUOTES = frozenset({chr(0x00AB), chr(0x2039)})
+_PERCENT_SIGNS = frozenset({"%", chr(0x2030), chr(0x2031)})
+_CJK_RANGES = (
+    (0x1100, 0x11FF),
+    (0x2E80, 0x2FFF),
+    (0x3001, 0x303F),
+    (0x3040, 0x30FF),
+    (0x3100, 0x31FF),
+    (0x3200, 0x9FFF),
+    (0xA960, 0xA97F),
+    (0xAC00, 0xD7FF),
+    (0xF900, 0xFAFF),
+    (0xFE30, 0xFE4F),
+    (0xFF00, 0xFFEF),
+    (0x1AFF0, 0x1B16F),
+    (0x20000, 0x3FFFF),
+)
+# The implicit directional marks (LEFT-TO-RIGHT MARK, RIGHT-TO-LEFT MARK, and
+# ARABIC LETTER MARK) are kept only where removing one changes the display.
+# Embeddings, overrides, and isolates are always removed.
+_DIRECTIONAL_MARKS = frozenset({chr(0x200E), chr(0x200F), chr(0x061C)})
+_STRONG_DIRECTIONS = frozenset({"L", "R", "AL"})
+# Roles passed over when finding the characters on either side of a mark.
+_TRANSPARENT_ROLES = frozenset({"skip", "combining", "mark"})
+# Each judging pass can only remove marks; the cap bounds adversarial input.
+_MARK_PASSES = 8
+# The characters of bidi class B, each of which ends a paragraph.
+_PARAGRAPH_SEPARATORS = "".join(
+    chr(code_point) for code_point in (0x0A, 0x0D, 0x1C, 0x1D, 0x1E, 0x85, 0x2029)
+)
+_PARAGRAPH_BREAK = re.compile(f"[{re.escape(_PARAGRAPH_SEPARATORS)}]")
 # Derived from https://www.unicode.org/Public/17.0.0/emoji/emoji-zwj-sequences.txt
 # by taking the numeric base pair on each side of U+200D.
 _EMOJI_ZWJ_PAIRS = frozenset(
@@ -475,6 +515,263 @@ def _tag_sequence_offsets(text: str) -> frozenset[int]:
     return frozenset(offsets)
 
 
+def _no_break_reason(text: str, offset: int) -> str | None:
+    """Why a no-break space holds typography together, or None."""
+    before = text[offset - 1] if offset else ""
+    after = text[offset + 1 : offset + 2]
+    digit_before = bool(before) and unicodedata.category(before) == "Nd"
+    if digit_before and after and unicodedata.category(after) == "Nd":
+        return "no-break space inside a number"
+    if text[offset] == _FIGURE_SPACE:
+        return None
+    if (
+        digit_before
+        and after
+        and ord(after) not in _INVISIBLE_LETTERS_AND_MARKS
+        and (after in _PERCENT_SIGNS or unicodedata.category(after)[0] in "LS")
+    ):
+        return "no-break space between a number and a unit, symbol, or word"
+    if (
+        after in _FRENCH_CLOSING_PUNCTUATION and before and not before.isspace()
+    ) or (before in _FRENCH_OPENING_QUOTES and after and not after.isspace()):
+        return "no-break space at French punctuation or quotation marks"
+    return None
+
+
+def _is_cjk(character: str) -> bool:
+    code_point = ord(character)
+    return (
+        _in_ranges(code_point, _CJK_RANGES)
+        and code_point not in _INVISIBLE_LETTERS_AND_MARKS
+        and unicodedata.category(character)[0] in "LNPS"
+    )
+
+
+def _cjk_space_offsets(text: str) -> frozenset[int]:
+    """Offsets of ideographic spaces in runs that touch CJK text."""
+    offsets: set[int] = set()
+    start = text.find(_IDEOGRAPHIC_SPACE)
+    while start != -1:
+        end = start
+        while end < len(text) and text[end] == _IDEOGRAPHIC_SPACE:
+            end += 1
+        if (start > 0 and _is_cjk(text[start - 1])) or (
+            end < len(text) and _is_cjk(text[end])
+        ):
+            offsets.update(range(start, end))
+        start = text.find(_IDEOGRAPHIC_SPACE, end)
+    return frozenset(offsets)
+
+
+def _paragraphs(text: str) -> Iterator[tuple[int, int]]:
+    """Yield the start and end offsets of each bidi paragraph."""
+    start = 0
+    for match in _PARAGRAPH_BREAK.finditer(text):
+        yield start, match.start()
+        start = match.end()
+    yield start, len(text)
+
+
+def _bidi_role(character: str) -> str:
+    """The part a character plays when judging a directional mark."""
+    if character in _DIRECTIONAL_MARKS:
+        return "mark"
+    bidi_class = unicodedata.bidirectional(character)
+    # The bidi algorithm ignores BN, and explicit removals are gone from the
+    # cleaned copy. A nonspacing mark takes its base's direction.
+    if bidi_class == "BN" or _is_explicit_removal(ord(character)):
+        return "skip"
+    if bidi_class == "NSM":
+        return "combining"
+    if bidi_class in _STRONG_DIRECTIONS:
+        return bidi_class
+    # Numbers (weak-type rules), paired brackets (rule N0), and tabs (rule
+    # L1) can change what a mark does in ways the judgment below does not
+    # model, so a mark that shares a stretch with one is kept.
+    if (
+        bidi_class in ("EN", "AN", "S")
+        or unicodedata.category(character) in ("Ps", "Pe")
+        and unicodedata.mirrored(character)
+    ):
+        return "unmodeled"
+    return "neutral"
+
+
+def _direction(bidi_class: str) -> str:
+    return "L" if bidi_class == "L" else "R"
+
+
+def _mark_reason(
+    mark_class: str,
+    strong_before: str | None,
+    strong_after: str | None,
+    paragraph_direction: str | None,
+    near_unmodeled: bool,
+    neighbor_before: str | None,
+    neighbor_after: str | None,
+) -> str | None:
+    """Why removing a directional mark would change the display, or None.
+
+    strong_before and strong_after are the bidi classes of the nearest strong
+    letter or kept mark on each side, and the neighbors are the roles of the
+    characters right beside the mark. The check compares, with and without
+    the mark, the paragraph direction (bidi rule P2), whether the mark splits
+    a run of letters that would otherwise be reversed together (rule L2), and
+    the direction given to the neutrals beside it (rules N1 and N2).
+    """
+    mark_direction = _direction(mark_class)
+    if strong_before is None:
+        embedding = _direction(strong_after) if strong_after else "L"
+        if mark_direction != embedding:
+            return "directional mark that sets its paragraph's direction"
+    else:
+        embedding = paragraph_direction
+    if near_unmodeled:
+        return "directional mark near a number, bracket, or tab, kept conservatively"
+    if (
+        mark_direction == embedding
+        and neighbor_before in _STRONG_DIRECTIONS
+        and neighbor_after in _STRONG_DIRECTIONS
+        and _direction(neighbor_before) != embedding
+        and _direction(neighbor_after) != embedding
+    ):
+        return "directional mark that splits a run of opposite-direction letters"
+    left = _direction(strong_before) if strong_before else embedding
+    right = _direction(strong_after) if strong_after else embedding
+    without = left if left == right else embedding
+    with_left = left if left == mark_direction else embedding
+    with_right = mark_direction if mark_direction == right else embedding
+    if (neighbor_before == "neutral" and with_left != without) or (
+        neighbor_after == "neutral" and with_right != without
+    ):
+        return (
+            "directional mark that changes the direction of nearby punctuation "
+            "or spaces"
+        )
+    return None
+
+
+def _strong_class(paragraph: str, roles: list[str], index: int) -> str:
+    """The bidi class of a strong letter or a directional mark."""
+    role = roles[index]
+    if role in _STRONG_DIRECTIONS:
+        return role
+    return unicodedata.bidirectional(paragraph[index])
+
+
+def _kept_marks_in_paragraph(paragraph: str) -> dict[int, str]:
+    """Offsets of the directional marks to keep in one paragraph, with reasons."""
+    roles = [_bidi_role(character) for character in paragraph]
+    if "R" not in roles and "AL" not in roles:
+        return {}
+
+    # Facts that do not depend on which marks stay: the nearest strong letter
+    # and the nearest character that is not skipped on each side, a running
+    # count of unmodeled characters, and whether a combining mark follows.
+    size = len(roles)
+    letter_before = [-1] * (size + 1)
+    shown_before = [-1] * (size + 1)
+    unmodeled_count = [0] * (size + 1)
+    for index, role in enumerate(roles):
+        strong = role in _STRONG_DIRECTIONS
+        letter_before[index + 1] = index if strong else letter_before[index]
+        shown = role not in _TRANSPARENT_ROLES
+        shown_before[index + 1] = index if shown else shown_before[index]
+        unmodeled_count[index + 1] = unmodeled_count[index] + (role == "unmodeled")
+    letter_after = [size] * (size + 1)
+    shown_after = [size] * (size + 1)
+    combining_next = [False] * (size + 1)
+    for index in range(size - 1, -1, -1):
+        role = roles[index]
+        strong = role in _STRONG_DIRECTIONS
+        letter_after[index] = index if strong else letter_after[index + 1]
+        shown = role not in _TRANSPARENT_ROLES
+        shown_after[index] = index if shown else shown_after[index + 1]
+        combining_next[index] = role == "combining" or (
+            role in ("skip", "mark") and combining_next[index + 1]
+        )
+
+    # Only the first mark of a run is a candidate; the rest are removed. So is
+    # a mark directly before a combining mark, which belongs to the letter
+    # before the mark.
+    marks: list[int] = []
+    after_mark = False
+    for index, role in enumerate(roles):
+        if role == "skip":
+            continue
+        if role == "mark" and not after_mark and not combining_next[index + 1]:
+            marks.append(index)
+        after_mark = role == "mark"
+
+    # Judge each remaining mark against the letters and the marks still in
+    # place, and remove it only when that leaves the display unchanged.
+    # Passes alternate direction until one removes nothing, so every kept
+    # mark is judged against the marks that stay.
+    count = len(marks)
+    previous = list(range(-1, count - 1))
+    following = list(range(1, count + 1))
+    alive = [True] * count
+    first = 0
+    reasons: list[str | None] = [None] * count
+    for pass_number in range(_MARK_PASSES):
+        removed = False
+        order = range(count) if pass_number % 2 == 0 else range(count - 1, -1, -1)
+        for item in order:
+            if not alive[item]:
+                continue
+            index = marks[item]
+            left_mark = marks[previous[item]] if previous[item] >= 0 else -1
+            right_mark = marks[following[item]] if following[item] < count else size
+            left = max(letter_before[index], left_mark)
+            right = min(letter_after[index + 1], right_mark)
+            # The paragraph direction comes from its first strong character.
+            start = min(letter_after[0], marks[first] if first < count else size)
+            reason = _mark_reason(
+                unicodedata.bidirectional(paragraph[index]),
+                _strong_class(paragraph, roles, left) if left >= 0 else None,
+                _strong_class(paragraph, roles, right) if right < size else None,
+                _direction(_strong_class(paragraph, roles, start))
+                if start < index
+                else None,
+                unmodeled_count[index] > unmodeled_count[left + 1]
+                or unmodeled_count[right] > unmodeled_count[index + 1],
+                roles[shown_before[index]] if shown_before[index] >= 0 else None,
+                roles[shown_after[index + 1]]
+                if shown_after[index + 1] < size
+                else None,
+            )
+            reasons[item] = reason
+            if reason is None:
+                alive[item] = False
+                removed = True
+                if previous[item] >= 0:
+                    following[previous[item]] = following[item]
+                else:
+                    first = following[item]
+                if following[item] < count:
+                    previous[following[item]] = previous[item]
+        if not removed:
+            break
+    return {
+        marks[item]: reason
+        for item, reason in enumerate(reasons)
+        if alive[item] and reason is not None
+    }
+
+
+def _kept_mark_reasons(text: str) -> dict[int, str]:
+    """Offsets of the directional marks to keep, with the reason for each."""
+    kept: dict[int, str] = {}
+    if not any(mark in text for mark in _DIRECTIONAL_MARKS):
+        return kept
+    for start, end in _paragraphs(text):
+        paragraph = text[start:end]
+        if any(mark in paragraph for mark in _DIRECTIONAL_MARKS):
+            for index, reason in _kept_marks_in_paragraph(paragraph).items():
+                kept[start + index] = reason
+    return kept
+
+
 def _is_known_emoji_zwj_pair(previous_base: str, next_base: str) -> bool:
     return (ord(previous_base), ord(next_base)) in _EMOJI_ZWJ_PAIRS
 
@@ -529,14 +826,24 @@ def _neighboring_bases(text: str) -> tuple[list[str | None], list[str | None]]:
     return previous, following
 
 
+class _Context(NamedTuple):
+    """Facts about the whole text, computed once before classification."""
+
+    previous_bases: list[str | None]
+    next_bases: list[str | None]
+    cjk_spaces: frozenset[int]
+    kept_marks: dict[int, str]
+
+
 def _classify(
     text: str,
     offset: int,
-    previous_base: str | None,
-    next_base: str | None,
+    context: _Context,
 ) -> tuple[str, str | None] | None:
     character = text[offset]
     code_point = ord(character)
+    previous_base = context.previous_bases[offset]
+    next_base = context.next_bases[offset]
 
     # Nothing in ASCII is ever acted on: the first candidate is U+00A0.
     if code_point < 0x80:
@@ -548,7 +855,12 @@ def _classify(
         return None
 
     if category == "Zs":
-        return "normalize", None
+        reason = None
+        if character in _NO_BREAK_SPACES:
+            reason = _no_break_reason(text, offset)
+        elif offset in context.cjk_spaces:
+            reason = "ideographic space beside CJK text"
+        return ("normalize", None) if reason is None else ("preserve", reason)
 
     if character in _JOINERS:
         if (
@@ -592,6 +904,10 @@ def _classify(
             return "preserve", "Mongolian vowel separator between Mongolian letters"
         return "remove", None
 
+    if character in _DIRECTIONAL_MARKS:
+        reason = context.kept_marks.get(offset)
+        return ("remove", None) if reason is None else ("preserve", reason)
+
     if _is_explicit_removal(code_point):
         return "remove", None
 
@@ -616,6 +932,12 @@ def _process(text: str) -> tuple[str, dict[str, object]]:
         raise TypeError("text must be a string")
 
     previous_bases, next_bases = _neighboring_bases(text)
+    context = _Context(
+        previous_bases,
+        next_bases,
+        _cjk_space_offsets(text),
+        _kept_mark_reasons(text),
+    )
     tag_sequence_offsets = _tag_sequence_offsets(text)
     findings: dict[tuple[str, str, str | None], dict[str, object]] = {}
     cleaned_characters: list[str] = []
@@ -631,12 +953,7 @@ def _process(text: str) -> tuple[str, dict[str, object]]:
         if offset in tag_sequence_offsets:
             classification = ("preserve", "part of a pinned Emoji 17 tag sequence")
         else:
-            classification = _classify(
-                text,
-                offset,
-                previous_bases[offset],
-                next_bases[offset],
-            )
+            classification = _classify(text, offset, context)
         if classification is None:
             cleaned_characters.append(character)
             continue

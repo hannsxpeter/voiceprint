@@ -15,7 +15,10 @@ import unicodedata
 
 _JOINERS = {"\u200c", "\u200d"}
 _MONGOLIAN_VARIATION_SELECTORS = range(0x180B, 0x180E)
+_MONGOLIAN_VOWEL_SEPARATOR = 0x180E
 MAX_INPUT_BYTES = 4 * 1024 * 1024
+POLICY_VERSION = 2
+# Unicode Emoji version of every pinned emoji table below.
 EMOJI_ZWJ_VERSION = "17.0"
 _SCRIPT_FAMILY_RANGES = (
     ("arabic", ((0x0600, 0x06FF), (0x0750, 0x077F), (0x0870, 0x08FF))),
@@ -40,14 +43,9 @@ _SCRIPT_FAMILY_RANGES = (
     ("cham", ((0xAA00, 0xAA5F),)),
     ("meetei-mayek", ((0xABC0, 0xABFF),)),
 )
-_EMOJI_RANGES = (
-    (0x2600, 0x27BF),
-    (0x1F000, 0x1FAFF),
-)
 _REMOVABLE_FORMAT_CODE_POINTS = {
     0x00AD,
     0x061C,
-    0x180E,
     0x200B,
     0x200E,
     0x200F,
@@ -331,6 +329,87 @@ _EMOJI_ZWJ_PAIRS = frozenset(
 _EMOJI_ZWJ_BASES = frozenset(
     code_point for pair in _EMOJI_ZWJ_PAIRS for code_point in pair
 )
+# Derived from https://www.unicode.org/Public/17.0.0/ucd/emoji/emoji-variation-sequences.txt
+# by taking the base of each sequence. Every base there has both a text
+# (U+FE0E) and an emoji (U+FE0F) presentation sequence.
+_EMOJI_VARIATION_BASES = frozenset(
+    {
+        0x0023, 0x002A, 0x0030, 0x0031, 0x0032, 0x0033,
+        0x0034, 0x0035, 0x0036, 0x0037, 0x0038, 0x0039,
+        0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139,
+        0x2194, 0x2195, 0x2196, 0x2197, 0x2198, 0x2199,
+        0x21A9, 0x21AA, 0x231A, 0x231B, 0x2328, 0x23CF,
+        0x23E9, 0x23EA, 0x23EB, 0x23EC, 0x23ED, 0x23EE,
+        0x23EF, 0x23F0, 0x23F1, 0x23F2, 0x23F3, 0x23F8,
+        0x23F9, 0x23FA, 0x24C2, 0x25AA, 0x25AB, 0x25B6,
+        0x25C0, 0x25FB, 0x25FC, 0x25FD, 0x25FE, 0x2600,
+        0x2601, 0x2602, 0x2603, 0x2604, 0x260E, 0x2611,
+        0x2614, 0x2615, 0x2618, 0x261D, 0x2620, 0x2622,
+        0x2623, 0x2626, 0x262A, 0x262E, 0x262F, 0x2638,
+        0x2639, 0x263A, 0x2640, 0x2642, 0x2648, 0x2649,
+        0x264A, 0x264B, 0x264C, 0x264D, 0x264E, 0x264F,
+        0x2650, 0x2651, 0x2652, 0x2653, 0x265F, 0x2660,
+        0x2663, 0x2665, 0x2666, 0x2668, 0x267B, 0x267E,
+        0x267F, 0x2692, 0x2693, 0x2694, 0x2695, 0x2696,
+        0x2697, 0x2699, 0x269B, 0x269C, 0x26A0, 0x26A1,
+        0x26A7, 0x26AA, 0x26AB, 0x26B0, 0x26B1, 0x26BD,
+        0x26BE, 0x26C4, 0x26C5, 0x26C8, 0x26CE, 0x26CF,
+        0x26D1, 0x26D3, 0x26D4, 0x26E9, 0x26EA, 0x26F0,
+        0x26F1, 0x26F2, 0x26F3, 0x26F4, 0x26F5, 0x26F7,
+        0x26F8, 0x26F9, 0x26FA, 0x26FD, 0x2702, 0x2705,
+        0x2708, 0x2709, 0x270A, 0x270B, 0x270C, 0x270D,
+        0x270F, 0x2712, 0x2714, 0x2716, 0x271D, 0x2721,
+        0x2728, 0x2733, 0x2734, 0x2744, 0x2747, 0x274C,
+        0x274E, 0x2753, 0x2754, 0x2755, 0x2757, 0x2763,
+        0x2764, 0x2795, 0x2796, 0x2797, 0x27A1, 0x27B0,
+        0x27BF, 0x2934, 0x2935, 0x2B05, 0x2B06, 0x2B07,
+        0x2B1B, 0x2B1C, 0x2B50, 0x2B55, 0x3030, 0x303D,
+        0x3297, 0x3299, 0x1F004, 0x1F170, 0x1F171, 0x1F17E,
+        0x1F17F, 0x1F202, 0x1F21A, 0x1F22F, 0x1F237, 0x1F30D,
+        0x1F30E, 0x1F30F, 0x1F315, 0x1F31C, 0x1F321, 0x1F324,
+        0x1F325, 0x1F326, 0x1F327, 0x1F328, 0x1F329, 0x1F32A,
+        0x1F32B, 0x1F32C, 0x1F336, 0x1F378, 0x1F37D, 0x1F393,
+        0x1F396, 0x1F397, 0x1F399, 0x1F39A, 0x1F39B, 0x1F39E,
+        0x1F39F, 0x1F3A7, 0x1F3AC, 0x1F3AD, 0x1F3AE, 0x1F3C2,
+        0x1F3C4, 0x1F3C6, 0x1F3CA, 0x1F3CB, 0x1F3CC, 0x1F3CD,
+        0x1F3CE, 0x1F3D4, 0x1F3D5, 0x1F3D6, 0x1F3D7, 0x1F3D8,
+        0x1F3D9, 0x1F3DA, 0x1F3DB, 0x1F3DC, 0x1F3DD, 0x1F3DE,
+        0x1F3DF, 0x1F3E0, 0x1F3ED, 0x1F3F3, 0x1F3F5, 0x1F3F7,
+        0x1F408, 0x1F415, 0x1F41F, 0x1F426, 0x1F43F, 0x1F441,
+        0x1F442, 0x1F446, 0x1F447, 0x1F448, 0x1F449, 0x1F44D,
+        0x1F44E, 0x1F453, 0x1F46A, 0x1F47D, 0x1F4A3, 0x1F4B0,
+        0x1F4B3, 0x1F4BB, 0x1F4BF, 0x1F4CB, 0x1F4DA, 0x1F4DF,
+        0x1F4E4, 0x1F4E5, 0x1F4E6, 0x1F4EA, 0x1F4EB, 0x1F4EC,
+        0x1F4ED, 0x1F4F7, 0x1F4F9, 0x1F4FA, 0x1F4FB, 0x1F4FD,
+        0x1F508, 0x1F50D, 0x1F512, 0x1F513, 0x1F549, 0x1F54A,
+        0x1F550, 0x1F551, 0x1F552, 0x1F553, 0x1F554, 0x1F555,
+        0x1F556, 0x1F557, 0x1F558, 0x1F559, 0x1F55A, 0x1F55B,
+        0x1F55C, 0x1F55D, 0x1F55E, 0x1F55F, 0x1F560, 0x1F561,
+        0x1F562, 0x1F563, 0x1F564, 0x1F565, 0x1F566, 0x1F567,
+        0x1F56F, 0x1F570, 0x1F573, 0x1F574, 0x1F575, 0x1F576,
+        0x1F577, 0x1F578, 0x1F579, 0x1F587, 0x1F58A, 0x1F58B,
+        0x1F58C, 0x1F58D, 0x1F590, 0x1F5A5, 0x1F5A8, 0x1F5B1,
+        0x1F5B2, 0x1F5BC, 0x1F5C2, 0x1F5C3, 0x1F5C4, 0x1F5D1,
+        0x1F5D2, 0x1F5D3, 0x1F5DC, 0x1F5DD, 0x1F5DE, 0x1F5E1,
+        0x1F5E3, 0x1F5E8, 0x1F5EF, 0x1F5F3, 0x1F5FA, 0x1F610,
+        0x1F687, 0x1F68D, 0x1F691, 0x1F694, 0x1F698, 0x1F6AD,
+        0x1F6B2, 0x1F6B9, 0x1F6BA, 0x1F6BC, 0x1F6CB, 0x1F6CD,
+        0x1F6CE, 0x1F6CF, 0x1F6E0, 0x1F6E1, 0x1F6E2, 0x1F6E3,
+        0x1F6E4, 0x1F6E5, 0x1F6E9, 0x1F6F0, 0x1F6F3,
+    }
+)
+# "#", "*", and the digits are ordinary prose characters. Their selector is
+# load-bearing only inside an emoji keycap sequence, which ends with U+20E3.
+_KEYCAP_BASES = frozenset({0x0023, 0x002A, *range(0x0030, 0x003A)})
+_COMBINING_ENCLOSING_KEYCAP = "\u20e3"
+# Derived from https://www.unicode.org/Public/17.0.0/emoji/emoji-sequences.txt
+# (RGI_Emoji_Tag_Sequence): U+1F3F4, tag characters, then U+E007F.
+_EMOJI_TAG_BASE = "\U0001f3f4"
+_EMOJI_TAG_SEQUENCES = (
+    "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",
+    "\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f",
+    "\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c\U000e0073\U000e007f",
+)
 
 
 def _in_ranges(code_point: int, ranges: tuple[tuple[int, int], ...]) -> bool:
@@ -357,8 +436,26 @@ def _script_family(character: str) -> str | None:
     return None
 
 
-def _is_emoji_range_base(character: str) -> bool:
-    return _in_ranges(ord(character), _EMOJI_RANGES)
+def _is_emoji_variation_sequence(text: str, offset: int) -> bool:
+    """Whether the selector at offset directly follows a pinned variation base."""
+    if offset == 0 or ord(text[offset - 1]) not in _EMOJI_VARIATION_BASES:
+        return False
+    if ord(text[offset - 1]) in _KEYCAP_BASES:
+        return text[offset + 1 : offset + 2] == _COMBINING_ENCLOSING_KEYCAP
+    return True
+
+
+def _tag_sequence_offsets(text: str) -> frozenset[int]:
+    """Offsets of tag characters that belong to a pinned emoji tag sequence."""
+    offsets: set[int] = set()
+    start = text.find(_EMOJI_TAG_BASE)
+    while start != -1:
+        for sequence in _EMOJI_TAG_SEQUENCES:
+            if text.startswith(sequence, start):
+                offsets.update(range(start + 1, start + len(sequence)))
+                break
+        start = text.find(_EMOJI_TAG_BASE, start + 1)
+    return frozenset(offsets)
 
 
 def _is_known_emoji_zwj_pair(previous_base: str, next_base: str) -> bool:
@@ -412,10 +509,12 @@ def _neighboring_bases(text: str) -> tuple[list[str | None], list[str | None]]:
 
 
 def _classify(
-    character: str,
+    text: str,
+    offset: int,
     previous_base: str | None,
     next_base: str | None,
 ) -> tuple[str, str | None] | None:
+    character = text[offset]
     code_point = ord(character)
 
     if unicodedata.category(character) == "Zs" and character != " ":
@@ -445,16 +544,25 @@ def _classify(
             ):
                 return "preserve", "Mongolian selector after Mongolian base"
             return "remove", None
-        if (
-            code_point in {0xFE0E, 0xFE0F}
-            and previous_base is not None
-            and _is_emoji_range_base(previous_base)
+        if code_point in {0xFE0E, 0xFE0F} and _is_emoji_variation_sequence(
+            text, offset
         ):
             presentation = "text" if code_point == 0xFE0E else "emoji"
             return (
                 "preserve",
-                f"{presentation}-presentation selector after emoji-range base",
+                f"{presentation}-presentation selector in a pinned Emoji 17 "
+                "variation sequence",
             )
+        return "remove", None
+
+    if code_point == _MONGOLIAN_VOWEL_SEPARATOR:
+        if (
+            previous_base is not None
+            and next_base is not None
+            and _script_family(previous_base) == "mongolian"
+            and _script_family(next_base) == "mongolian"
+        ):
+            return "preserve", "Mongolian vowel separator between Mongolian letters"
         return "remove", None
 
     if unicodedata.category(character) == "Cf":
@@ -474,6 +582,7 @@ def _process(text: str) -> tuple[str, dict[str, object]]:
         raise TypeError("text must be a string")
 
     previous_bases, next_bases = _neighboring_bases(text)
+    tag_sequence_offsets = _tag_sequence_offsets(text)
     findings: dict[tuple[str, str, str | None], dict[str, object]] = {}
     cleaned_characters: list[str] = []
     summary = {
@@ -485,11 +594,15 @@ def _process(text: str) -> tuple[str, dict[str, object]]:
     }
 
     for offset, character in enumerate(text):
-        classification = _classify(
-            character,
-            previous_bases[offset],
-            next_bases[offset],
-        )
+        if offset in tag_sequence_offsets:
+            classification = ("preserve", "part of a pinned Emoji 17 tag sequence")
+        else:
+            classification = _classify(
+                text,
+                offset,
+                previous_bases[offset],
+                next_bases[offset],
+            )
         if classification is None:
             cleaned_characters.append(character)
             continue
@@ -526,7 +639,7 @@ def _process(text: str) -> tuple[str, dict[str, object]]:
             cleaned_characters.append(character)
 
     manifest: dict[str, object] = {
-        "policy_version": 1,
+        "policy_version": POLICY_VERSION,
         "unicode_version": unicodedata.unidata_version,
         "emoji_zwj_version": EMOJI_ZWJ_VERSION,
         "findings": list(findings.values()),

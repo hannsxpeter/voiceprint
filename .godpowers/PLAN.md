@@ -1,5 +1,7 @@
 # Plan
 
+Status: done. This plan shipped as voiceprint 1.5.0 (PR hannsxpeter/voiceprint#4). Later work, including hygiene policy 3 and the move to Python 3.11, is tracked in STATE.md and DECISIONS.md.
+
 ## Goal
 Release voiceprint 1.5.0: bring the vendored skills current with their
 latest upstream releases (humanizer 1.3.1, authenticity-check 1.2.1), make
@@ -38,4 +40,4 @@ files and no documentation drift.
 - [x] 6. Independent review and security pass, then ship v1.5.0: Godpowers ship gate, pull request CI on Python 3.10 and 3.14, tag, and GitHub release (PR #4 merged as d9c27a9, tag v1.5.0, release published).
 
 ## Open questions
-- Should hygiene preserve no-break spaces and directional marks when locale typography or mixed-direction text depends on them, as humanizer's text-hygiene guidance does? This is the maintainer's call; it is tracked as a low risk in STATE.md.
+- Resolved 2026-10-08: hygiene policy 3 preserves no-break spaces where locale typography depends on them and directional marks where mixed-direction display does (see DECISIONS.md), closing the low risk this plan left open.

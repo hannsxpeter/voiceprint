@@ -25,8 +25,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.10 is the documented minimum for scripts/text_hygiene.py.
-        python-version: ["3.10", "3.14"]
+        # 3.11 is the documented minimum for scripts/text_hygiene.py. The
+        # "Protect main" ruleset requires both jobs by name, so a change here
+        # needs the ruleset's required checks updated before merging.
+        python-version: ["3.11", "3.14"]
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

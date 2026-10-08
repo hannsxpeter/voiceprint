@@ -80,9 +80,8 @@ Never edit a vendored file. A fix belongs upstream and is then re-synced via
 `scripts/sync-upstream`. Each vendored file's header stamp is the contract;
 see `README.md` for the full procedure.
 
-<!-- godpowers:begin -->
-## Godpowers
+## Maintaining this repository
 
-Project state lives in `.godpowers/` (STATE.md, PLAN.md, DECISIONS.md). Before calling code work done,
-run `npx -y godpowers@7 verify "<check command>"`. `/god` shows the next step.
-<!-- godpowers:end -->
+Guidance for changing voiceprint itself (checks, syncing, releases, and
+project state) is in `CONTRIBUTING.md`. It does not apply to running the
+skill.

@@ -5,6 +5,54 @@ to semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Text hygiene policy version 3 (manifests report `"policy_version": 3`)
+  keeps the typographic spaces and directional marks that policy 2 always
+  normalized or removed, and reports why in each kept character's `reason`:
+  - A no-break space (U+00A0) or narrow no-break space (U+202F) stays inside
+    a number, between a number and a unit of one to three letters or a
+    symbol, before French closing punctuation, and after French opening
+    guillemets, judged by the nearest neighbors that take space. A figure
+    space (U+2007) stays inside a number, and an ideographic space (U+3000)
+    in a run that touches CJK text. Every other no-break or width-specific
+    space is still normalized.
+  - A left-to-right, right-to-left, or Arabic letter mark stays only in a
+    paragraph with right-to-left letters and no embeddings, overrides, or
+    isolates, and only where removing it would change the display: the helper
+    applies the Unicode Bidirectional Algorithm, including numbers, tabs, and
+    bracket pairs, to the text between the nearest letters around it, widened
+    over every bracket pair the mark could affect, with and without the mark.
+    A run keeps at most its first mark, and a mark is removed before a
+    combining mark, more than 64 characters from any letter, or where the
+    text to judge would span more than 4,096 characters. Judging stops after
+    a budget of 4,000,000 steps per text. Embeddings, overrides, and isolates
+    are still always removed.
+  - Unassigned code points take their Unicode default direction, characters
+    the helper removes no longer influence what it keeps, and cleaning the
+    cleaned copy changes nothing whenever both cleanings finish judging
+    within the budget.
+    When the budget runs out, the paragraph being judged and every later one
+    keep none of their marks, and so does a paragraph whose marks still lack
+    current verdicts after 8 passes.
+- Python 3.11 is the documented minimum, and CI tests 3.11 and 3.14, because
+  Python 3.10 reaches end of life in October 2026.
+- `SKILL.md` stops the pass on any non-zero exit from the hygiene helper, not
+  only on exit 2.
+- The maintainer Godpowers note moved out of `AGENTS.md`, which users' tools
+  read when they run the skill, into the new `CONTRIBUTING.md`, which also
+  replaces the note's unpublished `npx -y godpowers@7` command with the
+  locally installed Godpowers CLI.
+
+### Added
+
+- An opt-in check of the directional-mark rule against GNU FriBidi
+  (`VOICEPRINT_FRIBIDI=1`), eval 14 for typographic spaces, a test that
+  cleaning is stable, and repository tests that keep the documented Python
+  minimum consistent, keep adapters free of maintainer workflow, and keep the
+  repository's own text free of characters the hygiene helper would act
+  on.
+
 ## [1.5.2] - 2026-10-08
 
 ### Changed

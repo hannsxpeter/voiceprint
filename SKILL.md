@@ -17,7 +17,7 @@ description: >-
 license: MIT
 allowed-tools: Read Glob Grep
 compatibility: >-
-  Requires Python 3.10 or newer for scripts/text_hygiene.py. Ships adapters
+  Requires Python 3.11 or newer for scripts/text_hygiene.py. Ships adapters
   for Claude Code, Cursor, Codex, Antigravity, Gemini CLI, Pi, OpenCode, and
   GitHub Copilot.
 metadata:
@@ -97,7 +97,7 @@ out of it.
 
 At the start of this step, run the immutable original through
 `python3 scripts/text_hygiene.py clean --stats` exactly once, resolving the
-script relative to this `SKILL.md`. Python 3.10 or newer is required. For
+script relative to this `SKILL.md`. Python 3.11 or newer is required. For
 pasted text, prefer the command's standard input and pass the original bytes
 through the host process-input facility. Never interpolate pasted text into a
 shell command, including a heredoc: a line in the draft that matches the
@@ -111,9 +111,11 @@ place. Standard output is the cleaned working copy; standard error is the
 deterministic JSON manifest. Input is capped at 4 MiB, which comfortably
 exceeds the 100,000-code-point product requirement.
 
-If the helper exits 2 because input is too large, invalid UTF-8, unreadable, or
-cannot be processed or written, stop before humanizer runs. State that the
-original was not changed and do not claim cleanup succeeded.
+If the helper exits with any status other than 0, stop before humanizer runs.
+Exit 2 means the input is too large, is not valid UTF-8, cannot be read, or
+could not be processed or written; any other status, such as a process the
+host stopped, is a failure too. State that the original was not changed and
+do not claim cleanup succeeded.
 
 Pass only the cleaned working copy to one invocation of
 `vendor/humanizer/SKILL.md` and follow it exactly,

@@ -1,7 +1,8 @@
 #!/bin/sh
 # check-vendor-headers - validate every file under vendor/ carries a valid
-# voiceprint sync header. Used by CI (.github/workflows/vendor-sync-check.yml)
-# and runnable locally. Exits non-zero and prints offending paths on any
+# voiceprint sync header, and that every references/ file a vendored SKILL.md
+# names was actually vendored. Run by scripts/check (and so by CI) and
+# runnable on its own. Exits non-zero and prints offending paths on any
 # violation.
 #
 # The vendored tree is synced copy, never the source of truth. The header is
@@ -73,10 +74,23 @@ done <<EOF
 $files
 EOF
 
+# Every references/<file>.md that a vendored SKILL.md names must exist in that
+# skill's vendored tree, so a reference file added upstream can never be left
+# behind while the vendored SKILL.md already points at it.
+for skill in "$VENDOR"/*/SKILL.md; do
+  [ -f "$skill" ] || continue
+  tree=$(dirname -- "$skill")
+  refs=$(grep -o 'references/[A-Za-z0-9._-]*\.md' "$skill" | sort -u || true)
+  for ref in $refs; do
+    [ -f "$tree/$ref" ] \
+      || note_fail "$skill" "names $ref, which is not vendored in $tree"
+  done
+done
+
 if [ "$fail" -ne 0 ]; then
   printf '\nvendor-sync-check: FAILED. Re-run scripts/sync-upstream to restamp.\n' >&2
   exit 1
 fi
 
-printf 'vendor-sync-check: OK. All vendored files carry a valid sync header.\n'
+printf 'vendor-sync-check: OK. All vendored files carry a valid sync header, and every referenced file is vendored.\n'
 exit 0

@@ -1080,14 +1080,14 @@ class _ParagraphMarks:
                     break
         return self.holds[key]
 
-    def _pairs_to_include(self, mark, low, high, mark_direction, number_after):
+    def _pairs_to_include(self, mark, low, high, mark_direction):
         """Pairs, by opening index, a window must hold whole for rule N0.
 
         A pair holding a letter of the paragraph direction resolves to that
         direction whatever the marks, so it never needs widening. Any other
         pair with a bracket in the window does, and so does a pair around the
-        whole window that this mark could decide: one with no other character
-        of the mark's direction, or numbers after the mark whose type it sets.
+        whole window with no other character of the mark's direction, which
+        the mark alone could decide.
         """
         direction = self._paragraph_direction(None)
         brackets, partners = self.brackets, self.partners
@@ -1111,7 +1111,7 @@ class _ParagraphMarks:
                 brackets[opening] < low
                 and brackets[partners[opening]] > high
                 and not self._holds(opening, direction)
-                and (number_after or not self._holds(opening, mark_direction))
+                and not self._holds(opening, mark_direction)
             ):
                 found.append(opening)
             opening = self.enclosing[opening - 1] if opening > 0 else -1
@@ -1163,7 +1163,8 @@ class _ParagraphMarks:
         mark = self.candidates[item]
         direction = self._paragraph_direction(None)
         if direction != self._paragraph_direction(mark):
-            return _SETS_DIRECTION, self.start, self.end - 1
+            # Only the marks before the first letter decide the direction.
+            return _SETS_DIRECTION, self.start, min(self.first_letter, self.end - 1)
         left, left_letter = self._side(mark, -1)
         right, right_letter = (
             self._side(mark, 1) if left_letter is not None else ([], None)
@@ -1181,12 +1182,9 @@ class _ParagraphMarks:
         if self._has_pairs():
             initial = low, high
             mark_direction = _direction(mark_element[1])
-            number_after = any(value == "EN" for _, value in right)
             while True:
                 grown = False
-                for opening in self._pairs_to_include(
-                    mark, low, high, mark_direction, number_after
-                ):
+                for opening in self._pairs_to_include(mark, low, high, mark_direction):
                     first = self.brackets[opening]
                     last = self.brackets[self.partners[opening]]
                     if first < low:
@@ -1299,6 +1297,36 @@ class _ParagraphMarks:
         if following < len(self.candidates):
             self.previous[following] = previous
 
+    def _readers(self, item: int) -> list[int]:
+        """The marks still in place whose last judgment read this mark."""
+        mark = self.candidates[item]
+        first = bisect_left(self.candidates, mark - self.widest)
+        last = bisect_right(self.candidates, mark + self.widest)
+        readers = []
+        for other in range(first, last):
+            self.budget[0] -= 1
+            if (
+                other != item
+                and self.alive[other]
+                and self.read_low[other] <= mark <= self.read_high[other]
+            ):
+                readers.append(other)
+        return readers
+
+    def _fail_closed(self, item: int) -> None:
+        """Remove a mark that cannot be judged, and every mark that read it.
+
+        Any removal while judging already marks its readers for judging
+        again, so the cascade only matters when the pass limit ends judging
+        with marks still waiting; it keeps that case failing closed too.
+        """
+        waiting = [item]
+        while waiting:
+            current = waiting.pop()
+            if self.alive[current]:
+                self._remove(current)
+                waiting.extend(self._readers(current))
+
     def judge(self) -> dict[int, str]:
         """Offsets of the marks to keep, with reasons."""
         count = len(self.candidates)
@@ -1311,9 +1339,7 @@ class _ParagraphMarks:
                 if not (self.alive[item] and dirty[item]):
                     continue
                 if self.budget[0] <= 0:
-                    if reasons[item] is None:
-                        self._remove(item)
-                    continue
+                    break
                 dirty[item] = 0
                 reason, low, high = self._judge(item)
                 self.read_low[item], self.read_high[item] = low, high
@@ -1324,18 +1350,15 @@ class _ParagraphMarks:
                 self._remove(item)
                 removed = True
                 # Every mark whose last judgment read this one is judged again.
-                mark = self.candidates[item]
-                first = bisect_left(self.candidates, mark - self.widest)
-                last = bisect_right(self.candidates, mark + self.widest)
-                for other in range(first, last):
-                    self.budget[0] -= 1
-                    if (
-                        self.alive[other]
-                        and self.read_low[other] <= mark <= self.read_high[other]
-                    ):
-                        dirty[other] = 1
-            if not removed:
+                for other in self._readers(item):
+                    dirty[other] = 1
+            if not removed or self.budget[0] <= 0:
                 break
+        # A mark without a verdict for its present surroundings, because the
+        # budget or the pass limit ran out, is removed rather than trusted.
+        for item in range(count):
+            if self.alive[item] and dirty[item]:
+                self._fail_closed(item)
         return {
             self.candidates[item]: reason
             for item, reason in enumerate(reasons)

@@ -591,7 +591,9 @@ class TypographyAndDirectionTests(unittest.TestCase):
         # number, are ordinary gaps.
         self.assertEqual(clean_text("3\u00a0pommes")[0], "3 pommes")
         self.assertEqual(clean_text("3\u00a0four")[0], "3 four")
+        self.assertEqual(clean_text("3\u00a0four apples")[0], "3 four apples")
         self.assertEqual(clean_text("3\u00a0for")[0], "3\u00a0for")
+        self.assertEqual(clean_text("3\u00a0kWh used")[0], "3\u00a0kWh used")
         self.assertEqual(clean_text("5\u2007km")[0], "5 km")
 
     def test_preserves_no_break_spaces_at_french_punctuation(self):
@@ -876,6 +878,49 @@ class TypographyAndDirectionTests(unittest.TestCase):
         self.assertEqual(text_hygiene._bidi_class("\u0378"), "L")
         self.assertEqual(text_hygiene._bidi_class("\ufdd0"), "BN")
 
+    def test_keeps_exactly_the_marks_that_change_the_display(self):
+        # Inputs that once told apart a correct resolver from a subtly wrong
+        # one; the kept offsets agree with ICU and GNU FriBidi.
+        cases = (
+            ("numbers count as R for neutrals", "061C 0030 002C 200E 05FF", []),
+            ("Arabic letters count as R", "200E 05D0 061C 05FF", [0]),
+            ("a comma between numbers joins them", "062B 0039 00A0 061C 0032", [3]),
+            ("a pair holding the paragraph direction", "005B 05DC 200E 005D 0063", []),
+            ("the same, right to left", "200F 0028 0025 200E 0628 0029", []),
+            (
+                "marks kept so far shape later ones",
+                "200E 0026 061C 002B 0026 200F 0061 05D0",
+                [0, 2, 5],
+            ),
+            ("in a widened window too", "0068 2329 200F 0032 200E 05FF 232A", []),
+            ("equal windows differ by mark position", "05DC 200E 0020 200E 0063", [1]),
+            (
+                "an empty pair resolves by its neighbors",
+                "0628 200E 3008 3009 200E",
+                [1, 4],
+            ),
+            ("mirroring alone is a change", "0063 05D3 0062 061C 2329 200F", [3, 5]),
+        )
+        for name, code_points, expected in cases:
+            with self.subTest(name=name):
+                source = "".join(chr(int(value, 16)) for value in code_points.split())
+                manifest = clean_text(source)[1]
+                kept = sorted(
+                    offset
+                    for item in manifest["findings"]
+                    if item["action"] == "preserve"
+                    and item["code_point"] in ("U+200E", "U+200F", "U+061C")
+                    for offset in item["offsets"]
+                )
+
+                self.assertEqual(kept, expected)
+
+    def test_removes_marks_whose_bracket_window_is_too_wide(self):
+        # The mark decides the pair, but judging it means reading the pair.
+        self.assert_mark(
+            HEBREW_SHALOM + " \u200e(" + "a" * 5000 + ")", "U+200E", "remove"
+        )
+
     def test_removes_marks_far_from_any_letter(self):
         # Judged within 64 characters of a letter, removed beyond.
         self.assert_mark(
@@ -891,6 +936,16 @@ class TypographyAndDirectionTests(unittest.TestCase):
         with mock.patch.object(text_hygiene, "_MARK_BUDGET", 1):
             self.assert_mark(source, "U+200E", "remove")
         self.assert_mark(source, "U+200E", "preserve", CHANGES_DISPLAY_REASON)
+
+    def test_removes_marks_whose_verdict_the_budget_left_stale(self):
+        # Each Arabic letter mark is kept while the left-to-right mark after
+        # it is in place; once that one goes, the budget is gone, so the
+        # first verdict cannot be trusted and the mark goes too.
+        source = "\u061c-\u200e\u05d0 " * 50
+        with mock.patch.object(text_hygiene, "_MARK_BUDGET", 400):
+            cleaned = clean_text(source)[0]
+
+        self.assertEqual(clean_text(cleaned)[0], cleaned)
 
     def test_removes_marks_in_paragraphs_with_explicit_controls(self):
         # The isolate goes, and a mark that worked inside it could reorder the

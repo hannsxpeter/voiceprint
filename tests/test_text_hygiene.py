@@ -35,7 +35,6 @@ SETS_DIRECTION_REASON = "directional mark that sets its paragraph's direction"
 CHANGES_DISPLAY_REASON = (
     "directional mark that changes the order or mirroring of nearby characters"
 )
-NEAR_BRACKET_REASON = "directional mark near a bracket, kept conservatively"
 HEBREW_SHALOM = "\u05e9\u05dc\u05d5\u05dd"
 HEBREW_OLAM = "\u05e2\u05d5\u05dc\u05dd"
 
@@ -591,6 +590,8 @@ class TypographyAndDirectionTests(unittest.TestCase):
         # A word longer than a unit symbol, and a figure space outside a
         # number, are ordinary gaps.
         self.assertEqual(clean_text("3\u00a0pommes")[0], "3 pommes")
+        self.assertEqual(clean_text("3\u00a0four")[0], "3 four")
+        self.assertEqual(clean_text("3\u00a0for")[0], "3\u00a0for")
         self.assertEqual(clean_text("5\u2007km")[0], "5 km")
 
     def test_preserves_no_break_spaces_at_french_punctuation(self):
@@ -662,6 +663,54 @@ class TypographyAndDirectionTests(unittest.TestCase):
         }
 
         self.assertEqual(set(text_hygiene._PARAGRAPH_SEPARATORS), separators)
+
+    def test_pairs_brackets_as_definition_bd16_describes(self):
+        def pairs(text):
+            openings, closings = text_hygiene._pair_brackets(text, 0, len(text))
+            return sorted(zip(openings, closings))
+
+        self.assertEqual(pairs("a(b[c]d)e"), [(1, 7), (3, 5)])
+        # Canonically equivalent angle brackets pair with each other.
+        self.assertEqual(pairs("\u2329x\u3009 \u3008y\u232a"), [(0, 2), (4, 6)])
+        # A closing bracket with no opening partner is skipped, and a
+        # mismatched one closes the nearest opening it does match.
+        self.assertEqual(pairs(")(a]b)"), [(1, 5)])
+        # The search stops when 63 opening brackets are waiting.
+        self.assertEqual(len(pairs("(" * 63 + ")" * 63)), 63)
+        self.assertEqual(pairs("(" * 64 + ")" * 64), [])
+
+    def test_resolver_follows_each_bidi_rule(self):
+        # Expected levels agree with ICU and GNU FriBidi, except the combining
+        # mark after a resolved bracket, where the rule N0 text decides.
+        cases = (
+            ("W1", "a \u05d0\u05b8 b", [0, 0, 1, 1, 0, 0]),
+            ("W2 and W4", "\u0627 1+2", [1, 1, 2, 1, 2]),
+            ("W4", "\u05d0 1+2", [1, 1, 2, 2, 2]),
+            ("W5", "\u05d0 5%", [1, 1, 2, 2]),
+            ("W6", "\u05d0 %", [1, 1, 1]),
+            ("W7", "a \u05d0 b 12", [0, 0, 1, 0, 0, 0, 0, 0]),
+            ("N0 b", "a (\u05d0 b) c", [0, 0, 0, 1, 0, 0, 0, 0, 0]),
+            ("N0 c.1", "\u05d0 b(c)d \u05d3", [1, 1, 2, 2, 2, 2, 2, 1, 1]),
+            ("N0 c.2", "\u05d0 (b) \u05d3", [1, 1, 1, 2, 1, 1, 1]),
+            ("N0 mark", "a \u05d0(\u05d1)\u0301 b", [0, 0, 1, 1, 1, 1, 1, 0, 0]),
+            ("N0 empty", "\u05d0 ( ) b", [1, 1, 1, 1, 1, 1, 2]),
+            ("N1", "a \u05d0 . 1", [0, 0, 1, 1, 1, 1, 2]),
+            ("I2", "\u05d0 abc", [1, 1, 2, 2, 2]),
+            ("L1 end", "\u05d0 abc   ", [1, 1, 2, 2, 2, 1, 1, 1]),
+            ("L1 tab", "a\t\u05d0", [0, 0, 1]),
+        )
+        for rule, text, expected in cases:
+            with self.subTest(rule=rule):
+                classes = [text_hygiene._bidi_class(character) for character in text]
+                base_level = int(
+                    next(value for value in classes if value in ("L", "R", "AL")) != "L"
+                )
+                openings, closings = text_hygiene._pair_brackets(text, 0, len(text))
+                levels = text_hygiene._resolve_levels(
+                    classes, base_level, True, list(zip(openings, closings))
+                )
+
+                self.assertEqual(levels, expected)
 
     def test_bracket_pairs_are_mirrored_open_and_close_punctuation(self):
         for opening, closing in text_hygiene._BRACKET_PAIRS:
@@ -737,6 +786,8 @@ class TypographyAndDirectionTests(unittest.TestCase):
             HEBREW_SHALOM + " \u200e(12)", "U+200E", "preserve", CHANGES_DISPLAY_REASON
         )
         self.assert_mark(HEBREW_SHALOM + " \u200f(12)", "U+200F", "remove")
+        # The hyphen joins the two numbers either way.
+        self.assert_mark(HEBREW_SHALOM + " \u200e1-2", "U+200E", "remove")
 
     def test_judges_marks_beside_tabs_exactly(self):
         self.assert_mark(HEBREW_SHALOM + "\t\u200e\u05d0", "U+200E", "remove")
@@ -749,9 +800,27 @@ class TypographyAndDirectionTests(unittest.TestCase):
                 source = HEBREW_SHALOM + " (" + HEBREW_OLAM + ")" + mark
                 self.assert_mark(source, code_point, "remove")
 
-    def test_keeps_mark_beside_an_opposite_direction_parenthetical(self):
+    def test_judges_marks_beside_opposite_direction_parentheticals(self):
+        # A left-to-right mark before the bracket makes the pair take the
+        # direction of the English inside it; elsewhere a mark changes nothing.
         self.assert_mark(
-            HEBREW_SHALOM + " (Hello)\u200e", "U+200E", "preserve", NEAR_BRACKET_REASON
+            HEBREW_SHALOM + " \u200e(Hello)",
+            "U+200E",
+            "preserve",
+            CHANGES_DISPLAY_REASON,
+        )
+        self.assert_mark(HEBREW_SHALOM + " \u200f(Hello)", "U+200F", "remove")
+        self.assert_mark(HEBREW_SHALOM + " (Hello)\u200e", "U+200E", "remove")
+
+    def test_keeps_mark_that_decides_a_bracket_pair_around_its_window(self):
+        # The mark is the pair's only left-to-right character, so without it
+        # the parentheses take the Hebrew direction, though the tab keeps the
+        # text right around the mark the same.
+        self.assert_mark(
+            "a \u05d2(\u05d0\u05d1\u200e\t\u05d2\u05d3)",
+            "U+200E",
+            "preserve",
+            CHANGES_DISPLAY_REASON,
         )
 
     def test_keeps_only_the_first_mark_of_a_run(self):
@@ -808,19 +877,37 @@ class TypographyAndDirectionTests(unittest.TestCase):
         self.assertEqual(text_hygiene._bidi_class("\ufdd0"), "BN")
 
     def test_removes_marks_far_from_any_letter(self):
-        source = "\u05d0" + " ." * 40 + "\u200e" + " ." * 40 + "b"
+        # Judged within 64 characters of a letter, removed beyond.
+        self.assert_mark(
+            "\u05d0" + " ." * 30 + "\u200e! b",
+            "U+200E",
+            "preserve",
+            CHANGES_DISPLAY_REASON,
+        )
+        self.assert_mark("\u05d0" + " ." * 32 + "\u200e! b", "U+200E", "remove")
 
-        self.assert_mark(source, "U+200E", "remove")
+    def test_removes_marks_left_unjudged_when_the_budget_runs_out(self):
+        source = HEBREW_SHALOM + " Hello!\u200e"
+        with mock.patch.object(text_hygiene, "_MARK_BUDGET", 1):
+            self.assert_mark(source, "U+200E", "remove")
+        self.assert_mark(source, "U+200E", "preserve", CHANGES_DISPLAY_REASON)
 
     def test_removes_marks_in_paragraphs_with_explicit_controls(self):
         # The isolate goes, and a mark that worked inside it could reorder the
         # paragraph without it.
-        source = HEBREW_SHALOM + " Hello!\u200e \u2066x\u2069"
+        source = HEBREW_SHALOM + " Hello!\u200e " + HEBREW_OLAM + "\u2066x\u2069"
 
         cleaned, manifest = clean_text(source)
 
-        self.assertEqual(cleaned, HEBREW_SHALOM + " Hello! x")
+        self.assertEqual(cleaned, HEBREW_SHALOM + " Hello! " + HEBREW_OLAM + "x")
         self.assertEqual(manifest["summary"]["preserved"], 0)
+        # Without the isolate the same mark changes the display and stays.
+        self.assert_mark(
+            HEBREW_SHALOM + " Hello!\u200e " + HEBREW_OLAM + "x",
+            "U+200E",
+            "preserve",
+            CHANGES_DISPLAY_REASON,
+        )
 
     def test_judges_right_to_left_text_per_paragraph(self):
         source = "Hello!\u200e\r\n" + HEBREW_SHALOM + " Hello!\u200e\u2029Hello!\u200e"

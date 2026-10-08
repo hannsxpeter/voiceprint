@@ -127,8 +127,11 @@ _MARK_PATTERN = re.compile("[" + "".join(sorted(_DIRECTIONAL_MARKS)) + "]")
 _EXPLICIT_DIRECTIONAL_CONTROLS = tuple(
     chr(code_point) for code_point in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))
 )
+_EXPLICIT_PATTERN = re.compile("[" + "".join(_EXPLICIT_DIRECTIONAL_CONTROLS) + "]")
 # No right-to-left letter comes before U+0590.
-_FIRST_RIGHT_TO_LEFT = chr(0x0590)
+_BEYOND_LATIN = re.compile(f"[{chr(0x0590)}-{chr(0x10FFFF)}]")
+# Hygiene never acts on a character below U+00A0.
+_FIRST_ACTED_ON = chr(0x00A0)
 _STRONG_DIRECTIONS = frozenset({"L", "R", "AL"})
 _NEUTRAL_TYPES = frozenset({"B", "S", "WS", "ON"})
 # Bidi_Class defaults for code points the running Python leaves unassigned,
@@ -172,6 +175,9 @@ _MARK_WINDOW = 64
 _MARK_BUDGET = 4_000_000
 # Judging repeats while a pass removes marks, up to this many passes.
 _MARK_PASSES = 8
+# A window widened over bracket pairs may span at most this many characters;
+# a mark whose window would grow past it is removed.
+_MARK_SPAN = 4096
 # Judgments are remembered by the shape of the text around the mark, up to
 # this many shapes per text.
 _MARK_CACHE_SIZE = 65_536
@@ -179,7 +185,6 @@ _SETS_DIRECTION = "directional mark that sets its paragraph's direction"
 _CHANGES_DISPLAY = (
     "directional mark that changes the order or mirroring of nearby characters"
 )
-_NEAR_BRACKET = "directional mark near a bracket, kept conservatively"
 # Opening and closing brackets that pair under bidi rule N0, from
 # https://www.unicode.org/Public/17.0.0/ucd/BidiBrackets.txt.
 _BRACKET_PAIRS = (
@@ -832,6 +837,57 @@ def _resolve_brackets(classes, types, direction, pairs, fixed):
         set_type(closing, resolved)
 
 
+def _bracket_structure(text: str, start: int, end: int) -> tuple[array, array]:
+    """The paired brackets of text[start:end] (definition BD16).
+
+    Returns every bracket's offset, in order, and the index of its partner
+    in that list, or -1 for a bracket left unpaired.
+    """
+    positions = array("i")
+    partners = array("i")
+    stack: list[tuple[str, int]] = []
+    open_count: dict[str, int] = {}
+    pairing = True
+    for match in _BRACKET_PATTERN.finditer(text, start, end):
+        character, index = match.group(), len(positions)
+        positions.append(match.start())
+        partners.append(-1)
+        if not pairing:
+            continue
+        if character in _OPENING_BRACKETS:
+            if len(stack) == _BRACKET_DEPTH:
+                pairing = False
+                continue
+            canonical = _CANONICAL_BRACKETS.get(character, character)
+            stack.append((canonical, index))
+            open_count[canonical] = open_count.get(canonical, 0) + 1
+            continue
+        opening = _CLOSING_BRACKETS[character]
+        opening = _CANONICAL_BRACKETS.get(opening, opening)
+        if not open_count.get(opening):
+            continue
+        for depth in range(len(stack) - 1, -1, -1):
+            if stack[depth][0] == opening:
+                partners[index] = stack[depth][1]
+                partners[stack[depth][1]] = index
+                for canonical, _ in stack[depth:]:
+                    open_count[canonical] -= 1
+                del stack[depth:]
+                break
+    return positions, partners
+
+
+def _pair_brackets(text: str, start: int, end: int) -> tuple[list[int], list[int]]:
+    """The opening and closing offsets of each bracket pair, by opening."""
+    positions, partners = _bracket_structure(text, start, end)
+    pairs = [
+        (positions[index], positions[partner])
+        for index, partner in enumerate(partners)
+        if partner > index
+    ]
+    return [opening for opening, _ in pairs], [closing for _, closing in pairs]
+
+
 def _visual_order(levels: list[int]) -> list[int]:
     """Indices in display order (bidi rule L2)."""
     order = list(range(len(levels)))
@@ -854,9 +910,10 @@ class _ParagraphMarks:
 
     A mark is removed only when the paragraph displays the same without it,
     given the letters and the marks still in place: the same paragraph
-    direction, the same order of the characters around it, and the same
-    mirroring. Only the first mark of a run is a candidate, and so is no mark
-    directly before a combining mark, which belongs to the letter before it.
+    direction, the same order of the characters around it, the same
+    mirroring, and the same attachment of combining marks. Only the first
+    mark of a run is a candidate, and so is no mark directly before a
+    combining mark, which belongs to the letter before it.
     """
 
     def __init__(self, text, start, end, context, budget, cache):
@@ -872,8 +929,10 @@ class _ParagraphMarks:
         self.previous = array("l", range(-1, count - 1))
         self.following = array("l", range(1, count + 1))
         self.head = 0
-        self.pairs: dict[int, int] | None = None
-        self.fixed: dict[int, str | None] = {}
+        # The span each mark's last judgment read, to know what to judge again.
+        self.read_low = array("l", self.candidates)
+        self.read_high = array("l", self.candidates)
+        self.widest = 0
         self.first_letter = next(
             (
                 offset
@@ -883,9 +942,19 @@ class _ParagraphMarks:
             ),
             end,
         )
+        self.brackets: array | None = None
+        self.holds: dict[tuple[int, str], bool] = {}
 
     def _cleaned_class(self, offset: int) -> str:
         """The bidi class of a character in the cleaned copy; BN once removed."""
+        character = self.text[offset]
+        # ASCII, and letters and numbers other than the invisible fillers,
+        # are never acted on, so they skip the full classification.
+        if character < _FIRST_ACTED_ON or (
+            unicodedata.category(character)[0] in "LN"
+            and ord(character) not in _INVISIBLE_LETTERS_AND_MARKS
+        ):
+            return _bidi_class(character)
         classification = _classify(self.text, offset, self.context)
         if classification is not None and classification[0] == "remove":
             return "BN"
@@ -951,40 +1020,55 @@ class _ParagraphMarks:
             offset += step
         return elements, False
 
-    def _bracket_pairs(self) -> dict[int, int]:
-        """Each paired bracket's partner, by offset (definition BD16)."""
-        if self.pairs is None:
-            self.pairs = {}
-            stack: list[tuple[str, int]] = []
-            for match in _BRACKET_PATTERN.finditer(self.text, self.start, self.end):
-                character, offset = match.group(), match.start()
-                if character in _OPENING_BRACKETS:
-                    if len(stack) == _BRACKET_DEPTH:
-                        break
-                    canonical = _CANONICAL_BRACKETS.get(character, character)
-                    stack.append((canonical, offset))
-                    continue
-                opening = _CLOSING_BRACKETS[character]
-                opening = _CANONICAL_BRACKETS.get(opening, opening)
-                for depth in range(len(stack) - 1, -1, -1):
-                    if stack[depth][0] == opening:
-                        self.pairs[stack[depth][1]] = offset
-                        self.pairs[offset] = stack[depth][1]
-                        del stack[depth:]
-                        break
-        return self.pairs
+    def _letter(self, offset: int, step: int) -> tuple[int, bool]:
+        """The nearest letter past offset in one direction, or the paragraph edge."""
+        limit = self.start - 1 if step < 0 else self.end
+        offset += step
+        while offset != limit:
+            self.budget[0] -= 1
+            if (
+                self.text[offset] not in _DIRECTIONAL_MARKS
+                and self._cleaned_class(offset) in _STRONG_DIRECTIONS
+            ):
+                return offset, True
+            offset += step
+        return (self.start if step < 0 else self.end - 1), False
 
-    def _fixed_type(self, offset: int, direction: str) -> str | None:
-        """The paragraph direction when a pair holds a letter of that direction.
+    def _has_pairs(self) -> bool:
+        """Whether the paragraph has bracket pairs, finding them on first use."""
+        if self.brackets is None:
+            self.brackets, self.partners = array("i"), array("i")
+            if _BRACKET_PATTERN.search(self.text, self.start, self.end):
+                self.brackets, self.partners = _bracket_structure(
+                    self.text, self.start, self.end
+                )
+            # The innermost pair still open after each bracket, by the index
+            # of its opening bracket; pairs nest, so this also gives parents.
+            self.enclosing = array("i", [-1]) * len(self.brackets)
+            stack: list[int] = []
+            for index, partner in enumerate(self.partners):
+                if partner > index:
+                    stack.append(index)
+                elif 0 <= partner < index:
+                    stack.pop()
+                self.enclosing[index] = stack[-1] if stack else -1
+            self.paired = any(partner >= 0 for partner in self.partners)
+        return self.paired
 
-        Rule N0 then resolves the pair to the paragraph direction whatever the
-        marks around it, so its brackets can stand in for strong characters.
+    def _bracket_index(self, offset: int) -> int:
+        return bisect_left(self.brackets, offset)
+
+    def _holds(self, opening: int, direction: str) -> bool:
+        """Whether a pair holds a character, other than a mark, of a direction.
+
+        The pair is named by the index of its opening bracket.
         """
-        opening = min(offset, self._bracket_pairs()[offset])
-        if opening not in self.fixed:
+        key = (opening, direction)
+        if key not in self.holds:
             wanted = ("L",) if direction == "L" else ("R", "AL", "AN")
-            self.fixed[opening] = None
-            for inside in range(opening + 1, self.pairs[opening]):
+            self.holds[key] = False
+            closing = self.brackets[self.partners[opening]]
+            for inside in range(self.brackets[opening] + 1, closing):
                 self.budget[0] -= 1
                 if self.budget[0] <= 0:
                     break
@@ -992,9 +1076,46 @@ class _ParagraphMarks:
                     self.text[inside] not in _DIRECTIONAL_MARKS
                     and self._cleaned_class(inside) in wanted
                 ):
-                    self.fixed[opening] = direction
+                    self.holds[key] = True
                     break
-        return self.fixed[opening]
+        return self.holds[key]
+
+    def _pairs_to_include(self, mark, low, high, mark_direction, number_after):
+        """Pairs, by opening index, a window must hold whole for rule N0.
+
+        A pair holding a letter of the paragraph direction resolves to that
+        direction whatever the marks, so it never needs widening. Any other
+        pair with a bracket in the window does, and so does a pair around the
+        whole window that this mark could decide: one with no other character
+        of the mark's direction, or numbers after the mark whose type it sets.
+        """
+        direction = self._paragraph_direction(None)
+        brackets, partners = self.brackets, self.partners
+        found = []
+        first = self._bracket_index(low)
+        for index in range(first, bisect_right(brackets, high)):
+            partner = partners[index]
+            if partner < 0:
+                continue
+            opening = min(index, partner)
+            if partner > index:
+                outside = brackets[partner] > high
+            else:
+                outside = brackets[partner] < low
+            if outside and not self._holds(opening, direction):
+                found.append(opening)
+        index = first - 1
+        opening = self.enclosing[index] if index >= 0 else -1
+        while opening >= 0:
+            if (
+                brackets[opening] < low
+                and brackets[partners[opening]] > high
+                and not self._holds(opening, direction)
+                and (number_after or not self._holds(opening, mark_direction))
+            ):
+                found.append(opening)
+            opening = self.enclosing[opening - 1] if opening > 0 else -1
+        return found
 
     def _paragraph_direction(self, without: int | None) -> str:
         """The paragraph direction (rule P2), optionally without one mark."""
@@ -1033,7 +1154,12 @@ class _ParagraphMarks:
         return shown, attached, mirrored
 
     def _judge(self, item: int) -> tuple[str | None, int, int]:
-        """A reason to keep a mark, or None, and the span its judgment read."""
+        """A reason to keep a mark, or None, and the span its judgment read.
+
+        The mark is judged on the text between the nearest letters around it,
+        widened over any bracket pair whose resolution that text could change,
+        and removed when the window cannot be judged within the limits.
+        """
         mark = self.candidates[item]
         direction = self._paragraph_direction(None)
         if direction != self._paragraph_direction(mark):
@@ -1042,53 +1168,92 @@ class _ParagraphMarks:
         right, right_letter = (
             self._side(mark, 1) if left_letter is not None else ([], None)
         )
-        if left_letter is None or right_letter is None:
-            # Too far from a letter to judge: removed, and every mark whose
-            # window could have held it is judged again.
-            return (
-                None,
-                left[-1][0] if left else mark,
-                right[-1][0] if right else mark,
-            )
+        low = left[-1][0] if left else mark
+        high = right[-1][0] if right else mark
+        if left_letter is None or right_letter is None or self.budget[0] <= 0:
+            return None, low, high
+        low = left[-1][0] if left else self.start
+        high = right[-1][0] if right else self.end - 1
+        at_end = not right_letter
         left.reverse()
         mark_element = (mark, unicodedata.bidirectional(self.text[mark]))
         window = [*left, mark_element, *right]
-        low = left[0][0] if left else self.start
-        high = right[-1][0] if right else self.end - 1
-        index_of = {offset: index for index, (offset, _) in enumerate(window)}
+        if self._has_pairs():
+            initial = low, high
+            mark_direction = _direction(mark_element[1])
+            number_after = any(value == "EN" for _, value in right)
+            while True:
+                grown = False
+                for opening in self._pairs_to_include(
+                    mark, low, high, mark_direction, number_after
+                ):
+                    first = self.brackets[opening]
+                    last = self.brackets[self.partners[opening]]
+                    if first < low:
+                        low, _ = self._letter(first, -1)
+                        grown = True
+                    if last > high:
+                        high, found = self._letter(last, 1)
+                        at_end = not found
+                        grown = True
+                if self.budget[0] <= 0 or high - low > _MARK_SPAN:
+                    return None, low, high
+                if not grown:
+                    break
+            if (low, high) != initial:
+                window = self._elements(mark, low, high)
+                if self.budget[0] <= 0:
+                    return None, low, high
+        position = next(
+            index for index, (offset, _) in enumerate(window) if offset == mark
+        )
         pairs, fixed = [], {}
-        for index, (offset, _) in enumerate(window):
-            partner = (
-                self._bracket_pairs().get(offset)
-                if self.text[offset] in _PAIRED_BRACKETS
-                else None
-            )
-            if partner is None:
-                continue
-            if partner in index_of:
-                if offset < partner:
-                    pairs.append((index, index_of[partner]))
-                continue
-            fixed_type = self._fixed_type(offset, direction)
-            if fixed_type is None:
-                return _NEAR_BRACKET, low, high
-            fixed[index] = fixed_type
+        if self.paired:
+            index_of = {offset: index for index, (offset, _) in enumerate(window)}
+            for index, (offset, _) in enumerate(window):
+                if self.text[offset] not in _PAIRED_BRACKETS:
+                    continue
+                partner_index = self.partners[self._bracket_index(offset)]
+                if partner_index < 0:
+                    continue
+                partner = self.brackets[partner_index]
+                if partner in index_of:
+                    if offset < partner:
+                        pairs.append((index, index_of[partner]))
+                else:
+                    # Only a pair fixed to the paragraph direction reaches out.
+                    fixed[index] = direction
         # The judgment depends only on these facts, so equal shapes share it.
         shape = (
             "".join(self._shape_code(element) for element in window),
-            len(left),
+            position,
             direction,
-            right_letter,
+            at_end,
             tuple(pairs),
-            tuple(fixed.items()),
+            tuple(fixed),
         )
         if shape not in self.cache:
             if len(self.cache) >= _MARK_CACHE_SIZE:
                 self.cache.clear()
             self.cache[shape] = self._changes_display(
-                window, len(left), direction, not right_letter, pairs, fixed
+                window, position, direction, at_end, pairs, fixed
             )
         return (_CHANGES_DISPLAY if self.cache[shape] else None), low, high
+
+    def _elements(self, mark: int, low: int, high: int) -> list[tuple[int, str]]:
+        """The characters of a window that the cleaned copy keeps, with classes."""
+        window = []
+        for offset in range(low, high + 1):
+            self.budget[0] -= 1
+            if self.text[offset] in _DIRECTIONAL_MARKS:
+                if offset == mark or self._present(offset):
+                    value = unicodedata.bidirectional(self.text[offset])
+                    window.append((offset, value))
+            else:
+                value = self._cleaned_class(offset)
+                if value != "BN":
+                    window.append((offset, value))
+        return window
 
     def _shape_code(self, element: tuple[int, str]) -> str:
         offset, value = element
@@ -1151,15 +1316,24 @@ class _ParagraphMarks:
                     continue
                 dirty[item] = 0
                 reason, low, high = self._judge(item)
+                self.read_low[item], self.read_high[item] = low, high
+                self.widest = max(self.widest, high - low)
                 if reason is not None:
                     reasons[item] = reason
                     continue
                 self._remove(item)
                 removed = True
-                # Every mark whose judgment read this one may now differ.
-                first = bisect_left(self.candidates, low)
-                for other in range(first, bisect_right(self.candidates, high)):
-                    dirty[other] = self.alive[other]
+                # Every mark whose last judgment read this one is judged again.
+                mark = self.candidates[item]
+                first = bisect_left(self.candidates, mark - self.widest)
+                last = bisect_right(self.candidates, mark + self.widest)
+                for other in range(first, last):
+                    self.budget[0] -= 1
+                    if (
+                        self.alive[other]
+                        and self.read_low[other] <= mark <= self.read_high[other]
+                    ):
+                        dirty[other] = 1
             if not removed:
                 break
         return {
@@ -1184,14 +1358,12 @@ def _kept_mark_reasons(text: str, context: _Context) -> dict[int, str]:
     for start, end in _paragraphs(text):
         if not _MARK_PATTERN.search(text, start, end):
             continue
-        paragraph = text[start:end]
-        if any(control in paragraph for control in _EXPLICIT_DIRECTIONAL_CONTROLS):
+        if _EXPLICIT_PATTERN.search(text, start, end):
             continue
         if not any(
-            character >= _FIRST_RIGHT_TO_LEFT
-            and character not in _DIRECTIONAL_MARKS
-            and _bidi_class(character) in ("R", "AL")
-            for character in paragraph
+            match.group() not in _DIRECTIONAL_MARKS
+            and _bidi_class(match.group()) in ("R", "AL")
+            for match in _BEYOND_LATIN.finditer(text, start, end)
         ):
             continue
         kept.update(_ParagraphMarks(text, start, end, context, budget, cache).judge())

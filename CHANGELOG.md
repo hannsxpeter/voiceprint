@@ -20,13 +20,14 @@ to semantic versioning.
   - A left-to-right, right-to-left, or Arabic letter mark stays only in a
     paragraph with right-to-left letters and no embeddings, overrides, or
     isolates, and only where removing it would change the display: the helper
-    applies the Unicode Bidirectional Algorithm, including numbers, bracket
-    pairs, and tabs, to the text between the nearest letters around it, with
-    and without the mark. A mark beside a bracket pair that holds only
-    opposite-direction text is kept conservatively. A run keeps at most its
-    first mark, and a mark before a combining mark or more than 64
-    characters from any letter is removed. Embeddings, overrides, and
-    isolates are still always removed.
+    applies the Unicode Bidirectional Algorithm, including numbers, tabs, and
+    bracket pairs, to the text between the nearest letters around it, widened
+    over every bracket pair the mark could affect, with and without the mark.
+    A run keeps at most its first mark, and a mark is removed before a
+    combining mark, more than 64 characters from any letter, or where the
+    text to judge would span more than 4,096 characters. Judging examines at
+    most 4,000,000 characters per text. Embeddings, overrides, and isolates
+    are still always removed.
   - Unassigned code points take their Unicode default direction, characters
     the helper removes no longer influence what it keeps, and cleaning the
     cleaned copy changes nothing.

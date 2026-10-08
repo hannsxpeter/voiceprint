@@ -138,7 +138,9 @@ Everywhere else these spaces become ordinary spaces: a no-break space looks
 like any other space, so swapping one in at a word gap can carry a hidden
 mark. Other typographic uses, such as a no-break space after a one-letter
 word in Czech or Polish or inside an abbreviation, are normalized too, as are
-thin, hair, em, and the other width-specific spaces.
+thin, hair, em, and the other width-specific spaces. Where a no-break space is
+kept, choosing it over an ordinary space is still invisible, so each kept one
+could carry one hidden bit; the manifest lists every one with its reason.
 
 A directional mark is removed unless removing it would change how its
 paragraph displays. A left-to-right mark (U+200E), right-to-left mark
@@ -149,17 +151,21 @@ neutral characters, bracket pairs, tabs, and the paragraph direction) to the
 text between the nearest letters around the mark, once with the mark and once
 without, and keeps the mark when the paragraph direction, the order of those
 characters, their mirroring, or a combining mark's attachment would differ.
+Bracket pairs are resolved exactly: the text judged widens over every pair
+whose resolution the mark could change, such as an English phrase in
+parentheses inside Hebrew text, together with the letter before it.
 Characters the helper removes count as already gone, and unassigned code
-points take their Unicode default direction. One case is kept without that
-judgment: a mark beside a bracket pair that reaches past the nearest letters
-without holding a letter of the paragraph's direction, such as an English
-phrase in parentheses inside Hebrew text. Each mark is judged against the
-marks that remain, and judging repeats until a pass removes nothing (at most
-8 passes). Only the first mark of a run can stay, and a mark is removed when
-it sits between a letter and its combining mark or more than 64 characters
-from the nearest letter. To bound adversarial input, judging examines at most
-4,000,000 characters per text and removes any mark it has not judged by then;
-a 4 MiB document with 240,000 marks uses about half of that. Embeddings,
+points take their Unicode default direction (the pinned defaults match
+ICU's Unicode 17.0 data for every unassigned code point). Each mark is judged
+against the marks that remain, and judging repeats until a pass removes
+nothing (at most 8 passes). Only the first mark of a run can stay, and a mark
+is removed when it sits between a letter and its combining mark, more than
+64 characters from the nearest letter, or where the text to judge would
+span more than 4,096 characters. To bound adversarial input, judging
+examines at most 4,000,000 characters per text and removes any mark it has
+not judged by then; 4 MiB documents with 240,000 marks used between a fifth
+and a half of that in testing, and adversarial 4 MiB inputs take up to about
+three times as long as policy 2 and stay under 230 MB. Embeddings,
 overrides, and isolates (U+202A to U+202E and U+2066 to U+2069) are always
 removed: they can reorder whole spans, which is how Trojan Source attacks
 make text display in a different order from the one it is stored in. A kept
@@ -167,20 +173,24 @@ mark still reorders text, since that is its job, but only where the text
 around it shows the change. These rules are policy version 3; version 2
 normalized every space variant and removed every directional mark.
 
-The directional-mark rule is checked against GNU FriBidi, an independent
-implementation of the bidirectional algorithm, on random paragraphs that mix
-Hebrew, Arabic, and Latin letters, both kinds of digits, brackets, tabs,
-combining marks, no-break spaces, stray selectors, and explicit controls. In
-30,000 of them, every cleaned paragraph displayed exactly like the original
-apart from collapsed runs and marks dropped before combining marks, cleaning
-the cleaned copy changed nothing, and every mark kept for setting its
-paragraph's direction changed the display; of 4,584 marks kept for changing
-the order or mirroring of nearby characters, all but 3 did, each beside a
-combining mark inside brackets. In realistic Hebrew, Arabic, and mixed prose,
-no position lets an invisible mark survive without a visible effect except
-around an opposite-direction parenthetical, which leaves about six or seven
-such positions. With FriBidi installed, an opt-in test repeats a smaller
-version of the check:
+The directional-mark rule is checked against two independent
+implementations of the bidirectional algorithm, ICU (with Unicode 17.0 data)
+and GNU FriBidi, on 40,000 random paragraphs from two generators that mix
+Hebrew, Arabic, and Latin letters, both kinds of digits with separators,
+nested brackets, tabs, combining marks, no-break spaces, stray selectors,
+unassigned code points, and explicit controls. Measured against the same
+text with the helper's other removals and normalizations applied, every
+cleaned paragraph displayed like the original apart from the removals listed
+above, except one in which ICU leaves a nested pair of canonically equivalent
+angle brackets unpaired (FriBidi and the helper pair them, as the standard
+requires). Every one of 13,528 kept marks changed the display, and cleaning
+the cleaned copy changed nothing. Where one library departs from the
+standard (FriBidi stops pairing a bracket that follows a combining mark, and
+ICU leaves a combining mark after a resolved bracket unresolved), the helper
+follows the standard's text. In realistic Hebrew, Arabic, and mixed prose,
+and in inputs built to pack marks around parentheticals, no position lets an
+invisible mark survive without a visible effect. With FriBidi installed, an
+opt-in test repeats a smaller version of the check:
 
 ```sh
 VOICEPRINT_FRIBIDI=1 python3 -m unittest -v tests.test_text_hygiene.BidiReferenceTests

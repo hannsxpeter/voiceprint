@@ -16,10 +16,10 @@ Give writers and editors who use AI coding tools one honest pass over a draft: d
 ## Next
 - Decide the open question in PLAN.md about no-break spaces and directional marks.
 - Re-sync `vendor/` whenever upstream-freshness reports a re-sync as due.
-- Consider the low risks below, starting with branch protection on `main`.
+- Consider the remaining low risks below.
 
 ## Risks
 - [ ] low: hygiene normalizes every no-break space and removes every directional mark, including ones that locale typography or mixed right-to-left text needs, scripts/text_hygiene.py
 - [ ] low: AGENTS.md doubles as the end-user adapter but carries the maintainer Godpowers block, whose `npx -y godpowers@7` returns 404 on public npm (latest published is 6.3.0), AGENTS.md
-- [ ] low: `main` has no branch protection or required status checks, so CI cannot block a merge, GitHub repository settings
+- [x] low: `main` has no branch protection or required status checks, so CI cannot block a merge, GitHub repository settings (fixed 2026-10-07: ruleset "Protect main" mirrors humanizer's, blocking deletion and force pushes and requiring both vendor-sync-check jobs on an up-to-date branch)
 - [ ] low: Python 3.10, the documented minimum that CI tests, reaches end of life in October 2026, SKILL.md and .github/workflows/vendor-sync-check.yml

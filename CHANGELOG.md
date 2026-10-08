@@ -30,7 +30,8 @@ to semantic versioning.
     are still always removed.
   - Unassigned code points take their Unicode default direction, characters
     the helper removes no longer influence what it keeps, and cleaning the
-    cleaned copy changes nothing whenever judging finishes within its budget.
+    cleaned copy changes nothing whenever both cleanings finish judging
+    within the budget.
     When the budget runs out, the paragraph being judged and every later one
     keep none of their marks, and so does a paragraph whose marks still lack
     current verdicts after 8 passes.

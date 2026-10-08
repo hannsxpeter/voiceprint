@@ -193,11 +193,10 @@ above, except one in which ICU leaves an angle-bracket pair unpaired around
 an inner U+2329 and U+232A pair that holds no strong character (FriBidi and
 the helper pair them, as the standard requires). Every one of 13,528 kept
 marks changed the display, and cleaning the cleaned copy changed nothing,
-which holds whenever judging finishes within its budget. Where one library
-departs from the
-standard (FriBidi stops pairing a bracket that follows a combining mark, and
-ICU leaves a combining mark after a resolved bracket unresolved), the helper
-follows the standard's text. In realistic Hebrew, Arabic, and mixed prose,
+which holds whenever both cleanings finish judging within the budget. Where
+one library departs from the standard (FriBidi stops pairing a bracket that
+follows a combining mark, and ICU leaves a combining mark after a resolved
+bracket unresolved), the helper follows the standard's text. In realistic Hebrew, Arabic, and mixed prose,
 and in inputs built to pack marks around parentheticals, no position lets an
 invisible mark survive without a visible effect. With FriBidi installed, an
 opt-in test repeats a smaller version of the check:

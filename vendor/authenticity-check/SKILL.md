@@ -5,8 +5,8 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `authenticity-check` repo, SKILL.md
   (github.com/hannsxpeter/authenticity-check).
-Source commit: d5de843f81b7e88a1638ddcf68548559ec631b36
-Source blob: 7f8b051cb0cfde3190e19dda68527e84c94523ac
+Source commit: 0be7f0dfe1622720f3d1e7dcf34c5bb3839b5620
+Source blob: c3b4cb44b0438f6495ca224c4194f115b57470fc
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -17,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-10-07 from authenticity-check @ d5de843
+Last synced: 2026-10-08 from authenticity-check @ 0be7f0d
 =============================================================================
 -->
 
@@ -38,7 +38,7 @@ description: >-
   remove marks, or make it sound like someone.
 allowed-tools: Read, Glob, Grep
 metadata:
-  version: 1.2.2
+  version: 1.2.3
   compatibility: claude-code, cursor, codex, antigravity, gemini-cli, pi-coder, opencode, copilot, windsurf, cline, continue, zed, aider
 ---
 

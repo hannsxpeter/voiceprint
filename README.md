@@ -162,21 +162,23 @@ against the marks that remain, and judging repeats until a pass removes
 nothing (at most 8 passes). Only the first mark of a run can stay, and a mark
 is removed when it sits between a letter and its combining mark, more than
 64 characters from the nearest letter, or where the text to judge would
-span more than 4,096 characters. To bound adversarial input, judging
-examines at most 4,000,000 characters per text. When that runs out, the
-paragraph being judged and every later one keep none of their marks, and so
-does a paragraph whose marks still lack verdicts for their present
+span more than 4,096 characters. To bound adversarial input, judging has a
+budget of 4,000,000 steps per text: one for each character, bracket, or mark
+it reads, and three more for each character it resolves. When that runs out,
+the paragraph being judged and every later one keep none of their marks, and
+so does a paragraph whose marks still lack verdicts for their present
 surroundings after 8 passes. In testing on an Apple M4 Max, 4 MiB of short
 mixed Arabic, Hebrew, and English paragraphs with 227,000 marks used three
-quarters of the budget, the rule added at most about five seconds to any
-text, and adversarial 4 MiB inputs took up to about four times as long as
-policy 2 and at most about 30 MB more memory. Embeddings, overrides, and
-isolates (U+202A to U+202E and U+2066 to U+2069) are always removed: they
-can reorder whole spans, which is how Trojan Source attacks make text
-display in a different order from the one it is stored in. A kept mark still
-reorders text, since that is its job, but only where the text around it
-shows the change. These rules are policy version 3; version 2 normalized
-every space variant and removed every directional mark.
+quarters of the budget. Adversarial inputs took at most about six and a half
+seconds longer than under policy 2, the slowest being 4 MiB of one-line
+paragraphs that each hold marks (about four and a half times as long), and
+used at most about 30 MB more memory. Embeddings, overrides, and isolates
+(U+202A to U+202E and U+2066 to U+2069) are always removed: they can reorder
+whole spans, which is how Trojan Source attacks make text display in a
+different order from the one it is stored in. A kept mark still reorders
+text, since that is its job, but only where the text around it shows the
+change. These rules are policy version 3; version 2 normalized every space
+variant and removed every directional mark.
 
 The directional-mark rule is checked against two independent
 implementations of the bidirectional algorithm, ICU (with Unicode 17.0 data)

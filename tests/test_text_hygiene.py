@@ -1106,7 +1106,7 @@ class TypographyAndDirectionTests(unittest.TestCase):
         )
         full = kept_marks(clean_text(source)[1])
         self.assertEqual(full, [5, 22, 43])
-        for budget in range(1, 80):
+        for budget in range(1, 200):
             with self.subTest(budget=budget):
                 with mock.patch.object(text_hygiene, "_MARK_BUDGET", budget):
                     cleaned, manifest = clean_text(source)

@@ -25,8 +25,8 @@ to semantic versioning.
     over every bracket pair the mark could affect, with and without the mark.
     A run keeps at most its first mark, and a mark is removed before a
     combining mark, more than 64 characters from any letter, or where the
-    text to judge would span more than 4,096 characters. Judging examines at
-    most 4,000,000 characters per text. Embeddings, overrides, and isolates
+    text to judge would span more than 4,096 characters. Judging stops after
+    a budget of 4,000,000 steps per text. Embeddings, overrides, and isolates
     are still always removed.
   - Unassigned code points take their Unicode default direction, characters
     the helper removes no longer influence what it keeps, and cleaning the

@@ -170,11 +170,12 @@ _DEFAULT_BIDI_RANGES = (
 # such long runs without letters are rare in prose, and keeping their marks
 # unjudged would leave room to hide data.
 _MARK_WINDOW = 64
-# How many characters judging may examine in one text. 4 MiB of short mixed
-# Arabic, Hebrew, and English paragraphs with 227,000 marks needed three
-# quarters of it in testing. Once it runs out, the paragraph being judged and
-# every later one keep none of their marks, which bounds the time adversarial
-# input can take.
+# How many steps judging may take in one text: one for each character,
+# bracket, or mark it reads, and three more for each character it resolves.
+# 4 MiB of short mixed Arabic, Hebrew, and English paragraphs with 227,000
+# marks needed three quarters of it in testing. Once it runs out, the
+# paragraph being judged and every later one keep none of their marks, which
+# bounds the time adversarial input can take.
 _MARK_BUDGET = 4_000_000
 # Judging repeats while a pass removes marks, up to this many passes.
 _MARK_PASSES = 8
@@ -1259,6 +1260,11 @@ class _ParagraphMarks:
             array("i", fixed).tobytes(),
         )
         if shape not in self.cache:
+            # Resolving the window with and without the mark costs a few times
+            # more than reading it, so each character counts three more.
+            self.budget[0] -= 3 * len(window)
+            if self.budget[0] <= 0:
+                return None, low, high
             if len(self.cache) >= _MARK_CACHE_SIZE:
                 self.cache.clear()
             self.cache[shape] = self._changes_display(

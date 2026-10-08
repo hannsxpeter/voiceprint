@@ -1,7 +1,5 @@
 # voiceprint (agent instructions)
 
-<!-- Implements: P-MUST-01, P-MUST-05, P-MUST-06, P-MUST-07, P-MUST-08, P-MUST-09 -->
-
 This repository is the `voiceprint` skill: a thin orchestrator that runs a
 draft through one unified prose-authenticity pass. It composes two vendored
 skills, authenticity-check (diagnose) and humanizer (rewrite), in a fixed
@@ -37,8 +35,8 @@ shortcut. In brief, run these three steps in order, once each:
    `python3 scripts/text_hygiene.py clean --stats` once at the start of Step 2,
    preferring standard input for pasted text, then pass its cleaned working
    copy to one invocation of `vendor/humanizer/SKILL.md`. Follow humanizer's
-   voice discovery, density pre-check, multi-pass workflow, and meaning check.
-   This is the after text.
+   voice discovery, density pre-check, text-hygiene preflight, multi-pass
+   workflow, and meaning check. This is the after text.
 3. **Re-diagnose once, for residual only.** Read
    `vendor/authenticity-check/SKILL.md` again and run it on the after text as
    a fresh, cold diagnosis. Report the residual. Do not act on it.
@@ -57,7 +55,9 @@ low, not when spans remain, not "one more quick fix." One diagnose, one
 rewrite, one re-diagnose, then stop and report. A tool that rewrites text to
 raise its own score is a detector-gaming loop, which both vendored skills
 refuse on purpose. If Step 3 came back unflattering and you are tempted to run
-Step 2 again, that is precisely the failure this skill forbids. Stop.
+Step 2 again, that is precisely the failure this skill forbids. Stop. Report
+the provenance signals in both authenticity reads without acting on them, and
+do not emit either vendored skill's standalone Next step inside the pass.
 
 ## Scope
 

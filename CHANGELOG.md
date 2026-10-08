@@ -5,6 +5,81 @@ to semantic versioning.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-07
+
+### Changed
+
+- Re-synced the vendored skills to their upstream 1.2.1 releases (humanizer
+  @ 978116a, authenticity-check @ b20c10a), from the 1.1.1 commits vendored
+  in 1.2.0. This adds humanizer's prompt-level text-hygiene preflight
+  (`references/text-hygiene.md`) and authenticity-check's read-only Unicode
+  provenance preflight (`references/provenance-signals.md`) with its
+  `Provenance signals` report section.
+- The output contract now states how those upstream additions fit the single
+  pass without adding a stage or a loop. Both authenticity reads carry
+  authenticity-check's provenance signals, which are reported and never
+  cleaned. Humanizer's `Text hygiene:` header line folds into `What changed`
+  after the helper's manifest counts, which stay authoritative. Neither
+  vendored skill's standalone `Next step` is emitted inside the pass; inside
+  the residual, authenticity-check's would have sent the user back to a
+  rewrite. Every adapter carries the same rule.
+- Text hygiene policy version 2 (manifests report `"policy_version": 2`):
+  U+FE0E and U+FE0F are preserved only directly after one of the 371 bases in
+  the pinned Unicode Emoji 17.0 variation-sequence data, and after `#`, `*`,
+  or a digit only when U+20E3 follows. Tag characters are preserved only
+  inside the three RGI emoji tag sequences. Selectors after other bases and
+  repeated selectors are removed. The Mongolian vowel separator U+180E is
+  preserved between Mongolian letters.
+- `scripts/sync-upstream` vendors every tracked `references/*.md` file at the
+  stamped commit instead of a fixed list, reads file bytes from that commit
+  rather than the working tree, and warns when the commit is not on a
+  remote-tracking branch. `scripts/check-vendor-headers` fails when a
+  vendored `SKILL.md` names a reference file that was not vendored. The fixed
+  list would have silently skipped both reference files the upstreams added.
+- One entry point, `scripts/check`, runs every repository check, and CI runs
+  it on Python 3.10 (the documented minimum) and 3.14. The new
+  `tests/test_repository.py` covers frontmatter, version consistency, adapter
+  routing, eval structure, shell syntax, workflow pinning, and the dash
+  policy across every tracked file outside `vendor/`. Pushes report stale
+  vendored copies as a warning. The `upstream-freshness` workflow's checkout
+  action is pinned to a full commit SHA like the validation workflow, and the
+  workflow documents how to re-enable it after GitHub's inactivity pause.
+- `SKILL.md` no longer pre-approves `Edit`, which the pass never uses, and its
+  `compatibility` field now states the Python 3.10 requirement.
+- Added eval 12 for the provenance-signal and `Next step` interplay.
+
+### Fixed
+
+- Text hygiene no longer alters valid emoji. Policy 1 kept presentation
+  selectors only after bases in two hard-coded emoji blocks, which broke 40
+  basic emoji presentation sequences (such as U+00A9 U+FE0F and U+2B05
+  U+FE0F), all 12 keycap sequences, and the two head-shaking ZWJ sequences,
+  and it stripped the tag characters from the England, Scotland, and Wales
+  flags. That contradicted the 1.4.0 README, which said every pinned ZWJ
+  sequence passes unchanged. An opt-in test class
+  (`VOICEPRINT_UNICODE_DATA_DIR`) now checks the pinned tables and the
+  cleanup result against local copies of the official Unicode files.
+- The Mongolian vowel separator was removed as a hidden control even between
+  Mongolian letters, where it selects the separated form of a final vowel.
+- README: the eight supported tools are not the subset both upstream skills
+  share (both also ship Windsurf, Cline, Continue, Zed, and Aider adapters),
+  and the note on vendored frontmatter now matches upstream (humanizer dropped
+  `compatibility`; authenticity-check moved it under `metadata`).
+- GitHub had disabled the scheduled `upstream-freshness` workflow after 60
+  days without repository activity, so the vendored copies fell two upstream
+  releases behind unnoticed. The workflow is re-enabled, and every push now
+  reports staleness as well.
+
+### Removed
+
+- `agents/`: unfilled Pillars stub pillars, orphaned since the Godpowers 7
+  migration removed the instruction block that loaded them.
+- `.godpowers/archive/v6/`: Godpowers 6 state kept during that migration. Its
+  lasting decisions are recorded in `.godpowers/DECISIONS.md`, and the files
+  remain in git history.
+- The `Implements:` requirement tags in `SKILL.md`, the adapters, the hygiene
+  helper, its tests, and the workflow, which pointed only at that archive.
+
 ## [1.4.0] - 2026-08-15
 
 ### Added
@@ -195,3 +270,12 @@ First stable release.
   with no scripts and no CI. These additions are required: voiceprint carries
   a vendoring sync obligation that the standalone skills do not, so it needs a
   sync tool and a check that the obligation is being met.
+
+[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/hannsxpeter/voiceprint/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/hannsxpeter/voiceprint/releases/tag/v1.0.0

@@ -143,6 +143,20 @@
         "The low-score or continue-rewriting framing does not trigger candidate generation, statistical watermark rewriting, or a second prose transformation",
         "The output retains the six-section Voiceprint contract"
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "voiceprint this draft and tell me how it reads now: Our team\u200b delivered measurable results this quarter.",
+      "expected_output": "Both authenticity reads carry authenticity-check's provenance signals, one hygiene cleanup removes the zero-width space before the single rewrite, and the residual is reported without routing back to another rewrite.",
+      "files": [],
+      "expectations": [
+        "The before authenticity read reports U+200B as a provenance signal with an escaped code point and does not move the authenticity score because of it",
+        "Exactly one hygiene cleanup removes U+200B at offset 8 before the single humanizer invocation, and What changed reports it from the helper manifest",
+        "Humanizer's Voice, Density, and Text hygiene header lines appear inside What changed, not as separate sections",
+        "The residual read reports provenance signals for the After text and triggers no further cleanup or rewrite",
+        "Neither vendored skill's standalone Next step appears; the result closes with What remains is a human's call",
+        "The output retains exactly the six top-level Voiceprint sections"
+      ]
     }
   ]
 }

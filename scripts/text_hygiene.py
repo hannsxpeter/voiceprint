@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Inspect and clean text-only Unicode artifacts without changing source files."""
 
-# Implements: P-MUST-02, P-MUST-03, P-MUST-04, P-SHOULD-01
-
 from __future__ import annotations
 
 import argparse

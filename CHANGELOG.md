@@ -5,6 +5,17 @@ to semantic versioning.
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-10-08
+
+### Changed
+
+- Re-synced the vendored authenticity-check skill to its 1.2.3 release
+  (@ 0be7f0d), a tooling release that adds a drift check to that repo. The
+  only change to a vendored body is the version line in authenticity-check's
+  `SKILL.md`. Every vendored file carries a 2026-10-08 sync stamp because the
+  sync rebuilds the whole tree; the humanizer files keep their source commit
+  (v1.3.1, 09bf76d) and their bytes.
+
 ## [1.5.1] - 2026-10-07
 
 ### Changed
@@ -338,7 +349,8 @@ First stable release.
   a vendoring sync obligation that the standalone skills do not, so it needs a
   sync tool and a check that the obligation is being met.
 
-[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.3.0...v1.4.0

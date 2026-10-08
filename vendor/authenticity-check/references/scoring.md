@@ -5,7 +5,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `authenticity-check` repo, references/scoring.md
   (github.com/hannsxpeter/authenticity-check).
-Source commit: d5de843f81b7e88a1638ddcf68548559ec631b36
+Source commit: 0be7f0dfe1622720f3d1e7dcf34c5bb3839b5620
 Source blob: 4cf970de08b77984c5ccbe3d38efd09eb07f23e0
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
@@ -17,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-10-07 from authenticity-check @ d5de843
+Last synced: 2026-10-08 from authenticity-check @ 0be7f0d
 =============================================================================
 -->
 

@@ -81,6 +81,11 @@ _UNASSIGNED_DEFAULT_IGNORABLE_RANGES = (
     (0xE0080, 0xE00FF),
     (0xE01F0, 0xE0FFF),
 )
+_UNASSIGNED_DEFAULT_IGNORABLE_CODE_POINTS = frozenset(
+    code_point
+    for start, end in _UNASSIGNED_DEFAULT_IGNORABLE_RANGES
+    for code_point in range(start, end + 1)
+)
 # Assigned default-ignorable letters and marks that render invisibly but have
 # orthographic uses, so they are reported rather than removed: the combining
 # grapheme joiner, the Hangul fillers, and the Khmer inherent vowels.
@@ -475,12 +480,10 @@ def _is_known_emoji_zwj_pair(previous_base: str, next_base: str) -> bool:
 
 
 def _is_explicit_removal(code_point: int) -> bool:
-    if code_point in _REMOVABLE_FORMAT_CODE_POINTS:
-        return True
-    if code_point < 0xFFF0:
-        return False
-    return 0xE0000 <= code_point <= 0xE007F or _in_ranges(
-        code_point, _UNASSIGNED_DEFAULT_IGNORABLE_RANGES
+    return (
+        code_point in _REMOVABLE_FORMAT_CODE_POINTS
+        or 0xE0000 <= code_point <= 0xE007F
+        or code_point in _UNASSIGNED_DEFAULT_IGNORABLE_CODE_POINTS
     )
 
 

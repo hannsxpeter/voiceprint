@@ -5,7 +5,8 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `humanizer` repo, references/tell-patterns.md
   (github.com/hannsxpeter/humanizer).
-Source commit: 17c544e11f4b7795835919dcd840604f1e60d09f
+Source commit: 09bf76d20d5213d4299a0c7043f16c254c2aaac7
+Source blob: fde5d4e8bbddc8786fcced025715bf07ec9d2544
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -16,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-05-29 from humanizer @ 17c544e
+Last synced: 2026-10-07 from humanizer @ 09bf76d
 =============================================================================
 -->
 
@@ -33,7 +34,10 @@ Each entry has four parts:
 
 - **Detect** what it looks like in the wild.
 - **Why it reads as AI** the underlying tendency, so you fix the cause.
-- **Before / After** one concrete pair.
+- **Before / After** one concrete pair. Where an After names a figure, cause,
+  or source the Before lacks, assume the writer supplied it. The pair shows
+  the shape of a fix, never permission to invent; without a real detail to
+  surface, the honest After is shorter, not more specific.
 - **Restraint** when this is genuinely fine and should be left alone.
 
 ## Table of contents
@@ -77,7 +81,7 @@ Each entry has four parts:
 26. Decorative emojis
 27. Curly quotation marks
 28. Collaborative chatbot artifacts
-29. Knowledge-cutoff disclaimers
+29. Knowledge-cutoff and capability disclaimers
 30. Fragmented headers
 31. Chat-UI contamination artifacts
 32. Debunking-pose headings
@@ -401,9 +405,10 @@ own.
 - **After:** split into two sentences, or use a comma and a colon.
 - **Restraint:** one or two em dashes in a whole piece is normal human
   punctuation. A writer with a known dash habit (see voice-matching.md) keeps
-  it. Frequency and monotony are the tell, not the glyph. Note: this skill's
-  own output uses no em dashes by house rule, but that is a stylistic choice,
-  not a universal correctness claim.
+  it. Frequency and monotony are the tell, not the glyph. Note: this
+  repository's own documentation avoids em dashes as a house style. That is a
+  choice for these files, not a rule for rewrites and not a universal
+  correctness claim.
 
 ### 23. Boldface overuse
 

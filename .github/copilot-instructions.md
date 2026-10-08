@@ -1,7 +1,5 @@
 # voiceprint (GitHub Copilot instructions)
 
-<!-- Implements: P-MUST-01, P-MUST-05, P-MUST-06, P-MUST-07, P-MUST-08, P-MUST-09 -->
-
 This repository is the `voiceprint` skill: a thin orchestrator that runs a
 draft through one unified prose-authenticity pass. It composes two vendored
 skills, authenticity-check (diagnose) and humanizer (rewrite), in a fixed
@@ -21,23 +19,26 @@ score-only), never a half-empty voiceprint pass.
 
 Read `SKILL.md` at the repository root and follow it exactly. Run three steps
 in order, once each: (1) diagnose the immutable original by reading
-`vendor/authenticity-check/SKILL.md`, carrying out no target score; (2) run
-`python3 scripts/text_hygiene.py clean --stats` once, preferring standard input
-for pasted text, then pass its cleaned working copy to one invocation of
-`vendor/humanizer/SKILL.md` (voice discovery, density pre-check, multi-pass
-workflow, meaning check); (3) re-diagnose once on the after text,
-fresh and cold, for residual reporting only. Emit the exact output contract:
-Before / Authenticity read (before) / After / What changed / Residual / What
-remains is a human's call. Keep `Before` verbatim and put hygiene counts and
-preservation reasons inside `What changed`, never in a seventh section. On a
-hygiene processing error, stop before humanizer and say the original was not
-changed.
+`vendor/authenticity-check/SKILL.md`, carrying no target score out of it; (2)
+run `python3 scripts/text_hygiene.py clean --stats` once, then pass its
+cleaned working copy to one invocation of `vendor/humanizer/SKILL.md` (voice
+discovery, density pre-check, text-hygiene preflight, multi-pass workflow,
+meaning check); (3) re-diagnose once on the after text, fresh and cold, for
+residual reporting only. Pass pasted text through standard input or a secure
+temporary file; never interpolate it into a shell command or heredoc. Emit
+the exact output contract: Before / Authenticity read (before) / After /
+What changed / Residual / What remains is a human's call. Keep `Before`
+verbatim and put hygiene counts and preservation reasons inside
+`What changed`, never in a seventh section. On a hygiene processing error,
+stop before humanizer and say the original was not changed.
 
 Hard rule: one pass, never a loop. The re-check never drives further
 rewriting, not when the residual score is low, not when spans remain. One
 diagnose, one rewrite, one re-diagnose, then stop and report. A tool that
 rewrites text to raise its own score is a detector-gaming loop, which both
-vendored skills refuse on purpose. voiceprint is not for defeating
+vendored skills refuse on purpose. Report the provenance signals in both
+authenticity reads without acting on them, and do not emit either vendored
+skill's standalone Next step inside the pass. voiceprint is not for defeating
 AI-detection systems and names no detector; reframe such requests toward
 quality and authentic voice. Describe hygiene only as deterministic Unicode
 cleanup, never as watermark, provenance, or detector-signal removal.

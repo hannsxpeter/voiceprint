@@ -1,8 +1,10 @@
 #!/bin/sh
 # check-vendor-headers - validate every file under vendor/ carries a valid
-# voiceprint sync header. Used by CI (.github/workflows/vendor-sync-check.yml)
-# and runnable locally. Exits non-zero and prints offending paths on any
-# violation.
+# voiceprint sync header, that its body is exactly the upstream blob the
+# header names, and that every references/ file a vendored SKILL.md names was
+# actually vendored. Run by scripts/check (and so by CI) and runnable on its
+# own. Needs git (for git hash-object). Exits non-zero and prints offending
+# paths on any violation.
 #
 # The vendored tree is synced copy, never the source of truth. The header is
 # the contract: it records the true canonical upstream and the source commit
@@ -51,6 +53,18 @@ while IFS= read -r f; do
   printf '%s\n' "$hdr" | grep -Eq '^Source commit: [0-9a-f]{7,40}' \
     || note_fail "$f" "missing or malformed 'Source commit:' line"
 
+  # The body after the header must be exactly the upstream blob the header
+  # names, so an edit made here instead of upstream fails the check.
+  blob=$(printf '%s\n' "$hdr" | sed -n 's/^Source blob: \([0-9a-f]\{40\}\)$/\1/p' | head -n 1)
+  header_end=$(grep -n -m 1 '^-->$' "$f" | cut -d: -f1)
+  if [ -z "$blob" ]; then
+    note_fail "$f" "missing or malformed 'Source blob:' line"
+  elif [ -z "$header_end" ]; then
+    note_fail "$f" "header has no closing '-->' line"
+  elif [ "$(tail -n "+$((header_end + 2))" "$f" | git hash-object --stdin)" != "$blob" ]; then
+    note_fail "$f" "body is not the upstream blob its header names (edited here instead of upstream?)"
+  fi
+
   printf '%s\n' "$hdr" | grep -qF \
     'Synced copy, do not edit here, edit upstream.' \
     || note_fail "$f" "missing do-not-edit-here / edit-upstream notice"
@@ -73,10 +87,23 @@ done <<EOF
 $files
 EOF
 
+# Every references/<file>.md that a vendored SKILL.md names must exist in that
+# skill's vendored tree, so a reference file added upstream can never be left
+# behind while the vendored SKILL.md already points at it.
+for skill in "$VENDOR"/*/SKILL.md; do
+  [ -f "$skill" ] || continue
+  tree=$(dirname -- "$skill")
+  refs=$(grep -o 'references/[A-Za-z0-9._-]*\.md' "$skill" | sort -u || true)
+  for ref in $refs; do
+    [ -f "$tree/$ref" ] \
+      || note_fail "$skill" "names $ref, which is not vendored in $tree"
+  done
+done
+
 if [ "$fail" -ne 0 ]; then
   printf '\nvendor-sync-check: FAILED. Re-run scripts/sync-upstream to restamp.\n' >&2
   exit 1
 fi
 
-printf 'vendor-sync-check: OK. All vendored files carry a valid sync header.\n'
+printf 'vendor-sync-check: OK. Every vendored file has a valid sync header and its upstream bytes, and every referenced file is vendored.\n'
 exit 0

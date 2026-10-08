@@ -4,8 +4,6 @@ globs:
 alwaysApply: false
 ---
 
-<!-- Implements: P-MUST-01, P-MUST-05, P-MUST-06, P-MUST-07, P-MUST-08, P-MUST-09 -->
-
 # voiceprint (Cursor rule)
 
 When this rule is engaged, act as the `voiceprint` skill defined in this
@@ -24,10 +22,11 @@ Run three steps in order, once each:
    immutable original. This is the before read. Carry no target score out of
    it.
 2. Clean and rewrite: run `python3 scripts/text_hygiene.py clean --stats` once,
-   preferring standard input for pasted text, then pass its cleaned working
-   copy to one invocation of `vendor/humanizer/SKILL.md` (voice discovery,
-   density pre-check, multi-pass workflow, meaning check). This is the after
-   text.
+   then pass its cleaned working copy to one invocation of
+   `vendor/humanizer/SKILL.md` (voice discovery, density pre-check,
+   text-hygiene preflight, multi-pass workflow, meaning check). Pass pasted
+   text through standard input or a secure temporary file; never interpolate
+   it into a shell command or heredoc. This is the after text.
 3. Re-diagnose: read `vendor/authenticity-check/SKILL.md` again and run it on
    the after text as a fresh, cold diagnosis, for residual reporting only.
 
@@ -41,9 +40,11 @@ Hard rule: one pass, never a loop. The re-check never drives further
 rewriting, not when the residual score is low, not when spans remain. One
 diagnose, one rewrite, one re-diagnose, then stop. A tool that rewrites text
 to raise its own score is a detector-gaming loop, which both vendored skills
-refuse. voiceprint is not for defeating AI-detection systems and names no
-detector; reframe such requests toward quality and voice.
-Describe hygiene only as deterministic Unicode cleanup, never as watermark,
+refuse. Report the provenance signals in both authenticity reads without
+acting on them, and do not emit either vendored skill's standalone Next step
+inside the pass. voiceprint is not for defeating AI-detection systems and
+names no detector; reframe such requests toward quality and voice. Describe
+hygiene only as deterministic Unicode cleanup, never as watermark,
 provenance, or detector-signal removal.
 
 Never edit anything under `vendor/`. It is synced copy; fixes go upstream

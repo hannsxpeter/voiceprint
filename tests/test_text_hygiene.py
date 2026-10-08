@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Exact behavior tests for Voiceprint's deterministic Unicode hygiene."""
 
-# Implements: P-MUST-02, P-MUST-03, P-MUST-04, P-SHOULD-01
-
 import io
 import json
 import math
@@ -21,8 +19,10 @@ from scripts.text_hygiene import clean_text, inspect_text
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "text_hygiene.py"
-WORKFLOW = ROOT / ".github" / "workflows" / "vendor-sync-check.yml"
 EXPECTED_INPUT_CAP = 4 * 1024 * 1024
+UNICODE_DATA_DIR = os.environ.get("VOICEPRINT_UNICODE_DATA_DIR")
+VARIATION_REASON = "{}-presentation selector in a pinned Emoji 17 variation sequence"
+TAG_REASON = "part of a pinned Emoji 17 tag sequence"
 
 
 def finding(manifest, code_point, action):
@@ -34,8 +34,13 @@ def finding(manifest, code_point, action):
     )
 
 
+def hex_sequence(text):
+    """Render text as space-separated code points for readable failures."""
+    return " ".join(f"{ord(character):04X}" for character in text)
+
+
 class TextHygieneApiTests(unittest.TestCase):
-    def test_P_MUST_03_removes_each_hidden_control_family(self):
+    def test_removes_each_hidden_control_family(self):
         source = (
             "a\u00adb\u200bc\u202ed\U000e0067e\ufff9f\u2060g\u200dh"
             "\ufe0fi\U000e0100j"
@@ -69,7 +74,7 @@ class TextHygieneApiTests(unittest.TestCase):
             },
         )
 
-    def test_P_MUST_03_normalizes_unicode_spaces_only(self):
+    def test_normalizes_unicode_spaces_only(self):
         source = "a\u00a0b\u2007c\u202fd\u3000e\tf\r\ng\nh"
 
         cleaned, manifest = clean_text(source)
@@ -81,7 +86,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertNotIn("U+000A", [item["code_point"] for item in manifest["findings"]])
         self.assertNotIn("U+000D", [item["code_point"] for item in manifest["findings"]])
 
-    def test_P_MUST_02_aggregates_stable_offsets_in_first_seen_order(self):
+    def test_aggregates_stable_offsets_in_first_seen_order(self):
         source = "\u00adA\u200bB\u00adC\u200b" + ("x\u00ad" * 10)
 
         first = inspect_text(source)
@@ -104,7 +109,7 @@ class TextHygieneApiTests(unittest.TestCase):
         )
         self.assertEqual(finding(first, "U+200B", "remove")["offsets"], [2, 6])
 
-    def test_P_SHOULD_01_preserves_complex_script_joiners_with_reason(self):
+    def test_preserves_complex_script_joiners_with_reason(self):
         source = (
             "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 "
             "\u0915\u094d\u200d\u0937"
@@ -124,7 +129,7 @@ class TextHygieneApiTests(unittest.TestCase):
             "required by surrounding complex-script orthography",
         )
 
-    def test_P_MUST_04_preserves_complex_script_variation_selector(self):
+    def test_preserves_mongolian_variation_selector(self):
         source = "\u1820\u180b"
 
         cleaned, manifest = clean_text(source)
@@ -135,7 +140,62 @@ class TextHygieneApiTests(unittest.TestCase):
             "Mongolian selector after Mongolian base",
         )
 
-    def test_P_MUST_04_removes_supplementary_selector_after_arabic(self):
+    def test_preserves_mongolian_vowel_separator_between_mongolian_letters(self):
+        source = "\u182c\u180e\u1820"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(manifest["summary"]["actionable"], 0)
+        self.assertEqual(
+            finding(manifest, "U+180E", "preserve")["reason"],
+            "Mongolian vowel separator between Mongolian letters",
+        )
+
+    def test_removes_mongolian_vowel_separator_outside_mongolian_words(self):
+        source = "a\u180eb \u182c\u180e"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "ab \u182c")
+        self.assertEqual(finding(manifest, "U+180E", "remove")["count"], 2)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_removes_repeated_mongolian_variation_selectors(self):
+        source = "\u1820\u180b\u180c\u180d"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "\u1820\u180b")
+        self.assertEqual(finding(manifest, "U+180B", "preserve")["offsets"], [1])
+        self.assertEqual(manifest["summary"]["removed"], 2)
+
+    def test_removes_unassigned_default_ignorable_code_points(self):
+        source = (
+            "a\u2065b\U000e0000c\U000e0002d\U000e0080e"
+            "\ufff0f\U000e0fffg"
+        )
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "abcdefg")
+        self.assertEqual(manifest["summary"]["removed"], 6)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_reports_invisible_default_ignorable_letters_and_marks(self):
+        source = "a\u034fb\u115fc\u1160d\u17b4e\u17b5f\u3164g\uffa0h"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(manifest["summary"]["preserved"], 7)
+        self.assertEqual(manifest["summary"]["actionable"], 0)
+        self.assertEqual(
+            {item["reason"] for item in manifest["findings"]},
+            {"invisible default-ignorable character preserved conservatively"},
+        )
+
+    def test_removes_supplementary_selector_after_arabic(self):
         source = "\u0627\U000e0100"
 
         cleaned, manifest = clean_text(source)
@@ -143,7 +203,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(cleaned, "\u0627")
         self.assertEqual(finding(manifest, "U+E0100", "remove")["count"], 1)
 
-    def test_P_MUST_04_preserves_valid_emoji_sequences_written_as_escapes(self):
+    def test_preserves_valid_emoji_sequences_written_as_escapes(self):
         source = "\U0001f469\u200d\U0001f4bb and \u2764\ufe0f"
 
         cleaned, manifest = clean_text(source)
@@ -156,10 +216,10 @@ class TextHygieneApiTests(unittest.TestCase):
         )
         self.assertEqual(
             finding(manifest, "U+FE0F", "preserve")["reason"],
-            "emoji-presentation selector after emoji-range base",
+            VARIATION_REASON.format("emoji"),
         )
 
-    def test_P_MUST_04_preserves_person_profession_with_skin_tone_modifier(self):
+    def test_preserves_person_profession_with_skin_tone_modifier(self):
         source = "\U0001f469\U0001f3fd\u200d\U0001f4bb"
 
         cleaned, manifest = clean_text(source)
@@ -170,7 +230,7 @@ class TextHygieneApiTests(unittest.TestCase):
             "matches a pinned Emoji 17 pair",
         )
 
-    def test_P_MUST_04_preserves_standardized_family_sequence(self):
+    def test_preserves_standardized_family_sequence(self):
         source = "\U0001f468\u200d\U0001f469\u200d\U0001f467"
 
         cleaned, manifest = clean_text(source)
@@ -184,7 +244,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(len(zwj_findings), 1)
         self.assertEqual(zwj_findings[0]["count"], 2)
 
-    def test_P_MUST_04_preserves_standardized_rainbow_flag_sequence(self):
+    def test_preserves_standardized_rainbow_flag_sequence(self):
         source = "\U0001f3f3\ufe0f\u200d\U0001f308"
 
         cleaned, manifest = clean_text(source)
@@ -195,7 +255,7 @@ class TextHygieneApiTests(unittest.TestCase):
             "matches a pinned Emoji 17 pair",
         )
 
-    def test_P_MUST_04_preserves_official_unicode_17_wrestling_sequence(self):
+    def test_preserves_official_unicode_17_wrestling_sequence(self):
         source = (
             "\U0001f468\U0001f3fb\u200d\U0001faef\u200d"
             "\U0001f468\U0001f3fc"
@@ -206,7 +266,17 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(cleaned, source)
         self.assertEqual(finding(manifest, "U+200D", "preserve")["count"], 2)
 
-    def test_P_MUST_04_every_pinned_emoji_pair_preserves_zwj(self):
+    def test_preserves_head_shaking_sequences_with_trailing_selector(self):
+        source = "\U0001f642\u200d\u2194\ufe0f \U0001f642\u200d\u2195\ufe0f"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(manifest["summary"]["actionable"], 0)
+        self.assertEqual(finding(manifest, "U+200D", "preserve")["count"], 2)
+        self.assertEqual(finding(manifest, "U+FE0F", "preserve")["count"], 2)
+
+    def test_every_pinned_emoji_pair_preserves_zwj(self):
         for previous_base, next_base in sorted(text_hygiene._EMOJI_ZWJ_PAIRS):
             with self.subTest(previous_base=previous_base, next_base=next_base):
                 source = chr(previous_base) + "\u200d" + chr(next_base)
@@ -219,20 +289,112 @@ class TextHygieneApiTests(unittest.TestCase):
                     1,
                 )
 
-    def test_P_MUST_04_reports_text_and_emoji_presentation_selectors(self):
+    def test_reports_text_and_emoji_presentation_selectors(self):
         text_manifest = inspect_text("\u2764\ufe0e")
         emoji_manifest = inspect_text("\u2764\ufe0f")
 
         self.assertEqual(
             finding(text_manifest, "U+FE0E", "preserve")["reason"],
-            "text-presentation selector after emoji-range base",
+            VARIATION_REASON.format("text"),
         )
         self.assertEqual(
             finding(emoji_manifest, "U+FE0F", "preserve")["reason"],
-            "emoji-presentation selector after emoji-range base",
+            VARIATION_REASON.format("emoji"),
         )
 
-    def test_P_MUST_04_recombined_man_chain_reports_pairwise_evidence_only(self):
+    def test_preserves_presentation_sequences_outside_the_emoji_blocks(self):
+        source = "\u00a9\ufe0f \u2122\ufe0f \u2b05\ufe0f \u25b6\ufe0e \u3297\ufe0f"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(finding(manifest, "U+FE0F", "preserve")["count"], 4)
+        self.assertEqual(finding(manifest, "U+FE0E", "preserve")["count"], 1)
+        self.assertEqual(manifest["summary"]["actionable"], 0)
+
+    def test_preserves_keycap_sequences(self):
+        source = "#\ufe0f\u20e3 *\ufe0f\u20e3 0\ufe0f\u20e3 9\ufe0f\u20e3"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(
+            finding(manifest, "U+FE0F", "preserve"),
+            {
+                "code_point": "U+FE0F",
+                "name": "VARIATION SELECTOR-16",
+                "action": "preserve",
+                "count": 4,
+                "offsets": [1, 5, 9, 13],
+                "reason": VARIATION_REASON.format("emoji"),
+            },
+        )
+
+    def test_removes_selector_after_keycap_base_without_keycap(self):
+        source = "call 5\ufe0f55 or #\ufe0f"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "call 555 or #")
+        self.assertEqual(finding(manifest, "U+FE0F", "remove")["offsets"], [6, 14])
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_every_pinned_variation_sequence_preserves_its_selector(self):
+        for base in sorted(text_hygiene._EMOJI_VARIATION_BASES):
+            for selector in ("\ufe0e", "\ufe0f"):
+                source = chr(base) + selector
+                if base in text_hygiene._KEYCAP_BASES:
+                    source += "\u20e3"
+                with self.subTest(sequence=hex_sequence(source)):
+                    cleaned, manifest = clean_text(source)
+
+                    self.assertEqual(cleaned, source)
+                    self.assertEqual(manifest["summary"]["actionable"], 0)
+
+    def test_removes_selector_after_base_without_variation_sequence(self):
+        source = "\U0001f680\ufe0f \U0001f600\ufe0e"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "\U0001f680 \U0001f600")
+        self.assertEqual(manifest["summary"]["removed"], 2)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_removes_repeated_presentation_selector(self):
+        source = "\u2764\ufe0f\ufe0f"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "\u2764\ufe0f")
+        self.assertEqual(finding(manifest, "U+FE0F", "preserve")["offsets"], [1])
+        self.assertEqual(finding(manifest, "U+FE0F", "remove")["offsets"], [2])
+
+    def test_preserves_every_pinned_emoji_tag_sequence(self):
+        for sequence in text_hygiene._EMOJI_TAG_SEQUENCES:
+            with self.subTest(sequence=hex_sequence(sequence)):
+                cleaned, manifest = clean_text("flag " + sequence + ".")
+
+                self.assertEqual(cleaned, "flag " + sequence + ".")
+                self.assertEqual(manifest["summary"]["actionable"], 0)
+                self.assertEqual(manifest["summary"]["preserved"], 6)
+                self.assertEqual(
+                    {item["reason"] for item in manifest["findings"]},
+                    {TAG_REASON},
+                )
+
+    def test_removes_tag_characters_outside_pinned_tag_sequences(self):
+        unpinned_flag = (
+            "\U0001f3f4\U000e0075\U000e0073\U000e0063\U000e0061\U000e007f"
+        )
+        source = "a\U000e0067\U000e0062b " + unpinned_flag
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "ab \U0001f3f4")
+        self.assertEqual(manifest["summary"]["removed"], 7)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_recombined_man_chain_reports_pairwise_evidence_only(self):
         source = (
             "\U0001f468\u200d\U0001f468\u200d\U0001f468\u200d"
             "\U0001f468\u200d\U0001f468"
@@ -246,7 +408,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(item["reason"], "matches a pinned Emoji 17 pair")
         self.assertNotIn("valid", item["reason"])
 
-    def test_P_MUST_04_does_not_join_bases_across_spacing_or_punctuation(self):
+    def test_does_not_join_bases_across_spacing_or_punctuation(self):
         source = "\U0001f469 \u200d \U0001f4bb \u0645,\u200c,\u062e"
 
         cleaned, manifest = clean_text(source)
@@ -255,7 +417,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(manifest["summary"]["removed"], 2)
         self.assertNotIn("preserve", [item["action"] for item in manifest["findings"]])
 
-    def test_P_MUST_04_never_preserves_zero_width_non_joiner_as_emoji_glue(self):
+    def test_never_preserves_zero_width_non_joiner_as_emoji_glue(self):
         source = "\U0001f469\u200c\U0001f4bb"
 
         cleaned, manifest = clean_text(source)
@@ -264,7 +426,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(finding(manifest, "U+200C", "remove")["count"], 1)
         self.assertEqual(manifest["summary"]["preserved"], 0)
 
-    def test_P_MUST_04_removes_unknown_adjacent_emoji_zwj_pair(self):
+    def test_removes_unknown_adjacent_emoji_zwj_pair(self):
         source = "\U0001f600\u200d\U0001f680"
 
         cleaned, manifest = clean_text(source)
@@ -273,7 +435,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(finding(manifest, "U+200D", "remove")["count"], 1)
         self.assertEqual(manifest["summary"]["preserved"], 0)
 
-    def test_P_MUST_04_removes_cross_script_joiner(self):
+    def test_removes_cross_script_joiner(self):
         source = "\u0645\u200d\u0915"
 
         cleaned, manifest = clean_text(source)
@@ -282,7 +444,7 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(finding(manifest, "U+200D", "remove")["count"], 1)
         self.assertEqual(manifest["summary"]["preserved"], 0)
 
-    def test_P_MUST_04_preserves_unclassified_format_control_conservatively(self):
+    def test_preserves_unclassified_format_control_conservatively(self):
         source = "a\u06ddb"
 
         cleaned, manifest = clean_text(source)
@@ -293,7 +455,7 @@ class TextHygieneApiTests(unittest.TestCase):
             "unclassified format control preserved conservatively",
         )
 
-    def test_P_MUST_04_groups_same_joiner_by_action_and_reason(self):
+    def test_groups_same_joiner_by_action_and_reason(self):
         source = (
             "\u0915\u094d\u200d\u0937 "
             "\U0001f469\u200d\U0001f4bb"
@@ -316,7 +478,7 @@ class TextHygieneApiTests(unittest.TestCase):
             },
         )
 
-    def test_P_MUST_04_leaves_fullwidth_and_cyrillic_letters_unchanged(self):
+    def test_leaves_fullwidth_and_cyrillic_letters_unchanged(self):
         source = "\uff21\uff22\uff23 \u0410\u0412\u0421"
 
         cleaned, manifest = clean_text(source)
@@ -333,6 +495,7 @@ class TextHygieneApiTests(unittest.TestCase):
                 "actionable": 0,
             },
         )
+        self.assertEqual(manifest["policy_version"], 2)
         self.assertEqual(manifest["unicode_version"], text_hygiene.unicodedata.unidata_version)
         self.assertEqual(manifest["emoji_zwj_version"], "17.0")
 
@@ -340,7 +503,7 @@ class TextHygieneApiTests(unittest.TestCase):
         os.environ.get("VOICEPRINT_RELEASE_BENCHMARK") == "1",
         "release benchmark is opt-in",
     )
-    def test_P_MUST_02_p95_is_within_budget_for_one_hundred_thousand_code_points(self):
+    def test_p95_is_within_budget_for_one_hundred_thousand_code_points(self):
         source = ("a\u200b" * 50_000)
 
         for _ in range(2):
@@ -380,7 +543,7 @@ class TextHygieneCliTests(unittest.TestCase):
             timeout=timeout,
         )
 
-    def test_P_MUST_02_inspect_reads_stdin_emits_json_and_exits_one(self):
+    def test_inspect_reads_stdin_emits_json_and_exits_one(self):
         result = self.run_cli("inspect", input_bytes=b"a\xc2\xadb")
 
         self.assertEqual(result.returncode, 1)
@@ -388,13 +551,13 @@ class TextHygieneCliTests(unittest.TestCase):
         manifest = json.loads(result.stdout)
         self.assertEqual(manifest, inspect_text("a\u00adb"))
 
-    def test_P_MUST_02_inspect_zero_findings_exits_zero(self):
+    def test_inspect_zero_findings_exits_zero(self):
         result = self.run_cli("inspect", input_bytes=b"plain text")
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["findings"], [])
 
-    def test_P_MUST_03_clean_reads_file_without_modifying_it(self):
+    def test_clean_reads_file_without_modifying_it(self):
         source = "a\u00adb\u00a0c"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "draft.txt"
@@ -478,7 +641,7 @@ class TextHygieneCliTests(unittest.TestCase):
         self.assertEqual(result.stdout, b"")
         self.assertIn(b"path input must be a regular file", result.stderr)
 
-    def test_P_MUST_03_clean_reads_standard_input(self):
+    def test_clean_reads_standard_input(self):
         result = self.run_cli("clean", input_bytes="x\u200by".encode("utf-8"))
 
         self.assertEqual(result.returncode, 0)
@@ -566,19 +729,137 @@ class TextHygieneCliTests(unittest.TestCase):
         self.assertIn(b"could not read input", result.stderr)
 
 
-class TextHygieneWorkflowTests(unittest.TestCase):
-    def test_ci_uses_read_only_permissions_and_pinned_actions(self):
-        workflow = WORKFLOW.read_text(encoding="utf-8")
+def unicode_data_rows(name):
+    """Yield the semicolon-separated fields of one Unicode emoji data file."""
+    path = Path(UNICODE_DATA_DIR) / name
+    for line in path.read_text(encoding="utf-8").splitlines():
+        body = line.split("#", 1)[0].strip()
+        if body:
+            yield [field.strip() for field in body.split(";")]
 
-        self.assertIn("permissions:\n  contents: read\n", workflow)
-        self.assertIn(
-            "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4",
-            workflow,
+
+def code_point_sequence(field):
+    return "".join(chr(int(value, 16)) for value in field.split())
+
+
+@unittest.skipUnless(
+    UNICODE_DATA_DIR,
+    "set VOICEPRINT_UNICODE_DATA_DIR to run the Unicode data check",
+)
+class UnicodeDataTests(unittest.TestCase):
+    """Check the pinned tables and cleanup against the official Unicode files."""
+
+    DATA_FILES = (
+        "emoji-sequences.txt",
+        "emoji-variation-sequences.txt",
+        "emoji-zwj-sequences.txt",
+    )
+
+    def test_data_files_match_the_pinned_emoji_version(self):
+        for name in self.DATA_FILES:
+            with self.subTest(name=name):
+                text = (Path(UNICODE_DATA_DIR) / name).read_text(encoding="utf-8")
+                self.assertIn(
+                    f"# Version: {text_hygiene.EMOJI_ZWJ_VERSION}\n",
+                    text,
+                )
+        properties = (Path(UNICODE_DATA_DIR) / "DerivedCoreProperties.txt").read_text(
+            encoding="utf-8"
         )
-        self.assertIn(
-            "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5",
-            workflow,
+        self.assertTrue(
+            properties.startswith(
+                f"# DerivedCoreProperties-{text_hygiene.EMOJI_ZWJ_VERSION}.0.txt"
+            )
         )
+
+    def test_pinned_zwj_pairs_match_the_zwj_sequence_data(self):
+        skipped = {0xFE0E, 0xFE0F, *range(0x1F3FB, 0x1F400)}
+        pairs = set()
+        for field, *_ in unicode_data_rows("emoji-zwj-sequences.txt"):
+            code_points = [int(value, 16) for value in field.split()]
+            for index, code_point in enumerate(code_points):
+                if code_point != 0x200D:
+                    continue
+                before = index - 1
+                while code_points[before] in skipped:
+                    before -= 1
+                after = index + 1
+                while code_points[after] in skipped:
+                    after += 1
+                pairs.add((code_points[before], code_points[after]))
+
+        self.assertEqual(pairs, set(text_hygiene._EMOJI_ZWJ_PAIRS))
+
+    def test_pinned_variation_bases_match_the_variation_sequence_data(self):
+        bases = {
+            int(field.split()[0], 16)
+            for field, *_ in unicode_data_rows("emoji-variation-sequences.txt")
+        }
+
+        self.assertEqual(bases, set(text_hygiene._EMOJI_VARIATION_BASES))
+
+    def test_pinned_tag_sequences_match_the_rgi_tag_sequences(self):
+        sequences = {
+            code_point_sequence(field)
+            for field, kind, *_ in unicode_data_rows("emoji-sequences.txt")
+            if kind == "RGI_Emoji_Tag_Sequence"
+        }
+
+        self.assertEqual(sequences, set(text_hygiene._EMOJI_TAG_SEQUENCES))
+
+    def test_cleanup_leaves_every_rgi_emoji_sequence_unchanged(self):
+        sequences = []
+        for field, *_ in unicode_data_rows("emoji-sequences.txt"):
+            if ".." in field:
+                start, end = (int(value, 16) for value in field.split(".."))
+                sequences.extend(chr(code_point) for code_point in range(start, end + 1))
+            else:
+                sequences.append(code_point_sequence(field))
+        sequences.extend(
+            code_point_sequence(field)
+            for field, *_ in unicode_data_rows("emoji-zwj-sequences.txt")
+        )
+
+        changed = [
+            hex_sequence(sequence)
+            for sequence in sequences
+            if clean_text(sequence)[0] != sequence
+        ]
+
+        self.assertEqual(changed, [])
+        print(f"Unicode data check: {len(sequences)} RGI emoji sequences unchanged")
+
+    def test_cleanup_leaves_every_variation_sequence_unchanged(self):
+        changed = []
+        for field, *_ in unicode_data_rows("emoji-variation-sequences.txt"):
+            sequence = code_point_sequence(field)
+            if ord(sequence[0]) in text_hygiene._KEYCAP_BASES:
+                sequence += "\u20e3"
+            if clean_text(sequence)[0] != sequence:
+                changed.append(hex_sequence(sequence))
+
+        self.assertEqual(changed, [])
+
+    def test_every_default_ignorable_code_point_is_detected(self):
+        undetected = []
+        kept_unassigned = []
+        path = Path(UNICODE_DATA_DIR) / "DerivedCoreProperties.txt"
+        for line in path.read_text(encoding="utf-8").splitlines():
+            body, _, comment = line.partition("#")
+            fields = [field.strip() for field in body.split(";")]
+            if fields[-1] != "Default_Ignorable_Code_Point":
+                continue
+            start, _, end = fields[0].partition("..")
+            unassigned = comment.split()[0] == "Cn"
+            for code_point in range(int(start, 16), int(end or start, 16) + 1):
+                cleaned, manifest = clean_text("a" + chr(code_point) + "b")
+                if manifest["summary"]["detected"] != 1:
+                    undetected.append(f"U+{code_point:04X}")
+                if unassigned and cleaned != "ab":
+                    kept_unassigned.append(f"U+{code_point:04X}")
+
+        self.assertEqual(undetected, [])
+        self.assertEqual(kept_unassigned, [])
 
 
 if __name__ == "__main__":

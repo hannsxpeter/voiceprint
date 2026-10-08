@@ -5,7 +5,8 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `authenticity-check` repo, references/scoring.md
   (github.com/hannsxpeter/authenticity-check).
-Source commit: 71c3ec9b8aa1607b544f4780cef099ffab37e81b
+Source commit: b20c10a8407e578b76cb552c4b344583dde724bf
+Source blob: 4cf970de08b77984c5ccbe3d38efd09eb07f23e0
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -16,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-05-29 from authenticity-check @ 71c3ec9
+Last synced: 2026-10-07 from authenticity-check @ b20c10a
 =============================================================================
 -->
 
@@ -30,6 +31,12 @@ The score is a calibrated heuristic, not a verdict. It exists to communicate
 strength of evidence in one glance, then hand the reader to the flags and the
 caveat. Never present it as proof of authorship, and never tune it against any
 detector.
+
+Step 0a provenance findings are a separate evidence channel. Do not move the
+authenticity score because an invisible Unicode carrier was found or absent.
+The score measures how the prose reads through cadence, diction, structure,
+specificity, internal consistency, and voice. Report provenance in its own
+section and score only the prose evidence from Passes 1-4.
 
 ## Part 1: The bands
 

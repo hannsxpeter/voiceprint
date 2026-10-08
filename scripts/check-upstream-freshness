@@ -1,8 +1,12 @@
 #!/bin/sh
 # check-upstream-freshness - is each vendored skill still current with its
 # canonical upstream? Compares the stamped "Source commit" in each vendored
-# SKILL.md header against the upstream repo's latest default-branch commit and
-# reports when a re-sync is due. Read-only: it changes nothing.
+# SKILL.md header against the upstream repo's latest default-branch commit.
+# When upstream has moved, it asks GitHub which files changed since the stamp
+# and reports a re-sync as due only if a commit touched SKILL.md or a
+# references/ file, the paths voiceprint vendors. Commits that change only an
+# upstream's CI, README, or other tooling are reported as content current.
+# Read-only: it changes nothing.
 #
 # The vendored tree under vendor/ is a synced copy, and nothing else forces a
 # re-pull when an upstream advances. That gap once let the vendored copies fall
@@ -13,8 +17,8 @@
 # CI). It reads only public repository metadata through the GitHub API.
 #
 # Exit status:
-#   0  every vendored skill is current
-#   1  at least one is behind (re-sync due)
+#   0  every vendored skill is current (its vendored paths are unchanged)
+#   1  at least one has a vendored path changed upstream (re-sync due)
 #   2  could not check (missing gh, unreadable header, API/network error),
 #      kept distinct from 1 so "stale" never hides behind "unknown".
 
@@ -68,12 +72,40 @@ for entry in $SKILLS; do
     printf 'OK    %-20s current with %s@%s (%s)\n' "$dir" "$repo" "$branch" "$s7"
     gha "- \`$dir\`: current (\`$s7\`)"
   else
-    behind=$(gh api "repos/$repo/compare/$stamped...$latest" --jq '.ahead_by' 2>/dev/null || printf '?')
-    rel=$(gh api "repos/$repo/releases/latest" --jq '.tag_name' 2>/dev/null || printf '')
-    printf 'STALE %-20s %s is %s commit(s) behind %s@%s (%s)%s\n' \
-      "$dir" "$s7" "$behind" "$repo" "$branch" "$l7" "${rel:+, latest release $rel}"
-    gha "- \`$dir\`: **$behind commit(s) behind** (vendored \`$s7\`, latest \`$l7\`${rel:+, release $rel})"
-    stale=1
+    # Upstream moved. It matters only if a commit since the stamp changed a
+    # vendored path, which the compare API can answer only when the stamp is an
+    # ancestor of the branch (status "ahead"); any other status is stale. A file
+    # list of 300 or more may be truncated, so it counts as a change, and a
+    # rename out of a vendored path counts through its previous name.
+    summary=$(gh api "repos/$repo/compare/$stamped...$latest" --jq '
+      "\(.status)|\(.ahead_by // "?")|" + (if ((.files // []) | length) >= 300 then "many files"
+        else ([(.files // [])[] | (.filename, (.previous_filename // empty))
+               | select(. == "SKILL.md" or startswith("references/"))] | unique | join(", "))
+        end)' 2>/dev/null || true)
+    if [ -z "$summary" ]; then
+      printf 'ERROR %s: could not compare %s with %s@%s (auth/network?)\n' "$dir" "$s7" "$repo" "$branch" >&2
+      gha "- \`$dir\`: error (could not compare with $repo)"; err=1; continue
+    fi
+    compare_status=${summary%%|*}
+    rest=${summary#*|}
+    behind=${rest%%|*}
+    touched=${rest#*|}
+    if [ "$compare_status" != "ahead" ]; then
+      printf 'STALE %-20s %s is not an ancestor of %s@%s (%s; compare status %s); re-sync from the default branch\n' \
+        "$dir" "$s7" "$repo" "$branch" "$l7" "$compare_status"
+      gha "- \`$dir\`: **re-sync due**: vendored \`$s7\` is not an ancestor of $branch (\`$l7\`, status $compare_status)"
+      stale=1
+    elif [ -z "$touched" ]; then
+      printf 'OK    %-20s content current: %s@%s (%s) is %s commit(s) past %s, none touching SKILL.md or references/\n' \
+        "$dir" "$repo" "$branch" "$l7" "$behind" "$s7"
+      gha "- \`$dir\`: content current (vendored \`$s7\`; $behind newer upstream commit(s) change no vendored path)"
+    else
+      rel=$(gh api "repos/$repo/releases/latest" --jq '.tag_name' 2>/dev/null || printf '')
+      printf 'STALE %-20s %s is %s commit(s) behind %s@%s (%s), changing %s%s\n' \
+        "$dir" "$s7" "$behind" "$repo" "$branch" "$l7" "$touched" "${rel:+; latest release $rel}"
+      gha "- \`$dir\`: **re-sync due**: $behind commit(s) behind (vendored \`$s7\`, latest \`$l7\`), changing $touched${rel:+; release $rel}"
+      stale=1
+    fi
   fi
 done
 

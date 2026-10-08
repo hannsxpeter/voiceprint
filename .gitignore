@@ -2,7 +2,7 @@
 .DS_Store
 Thumbs.db
 
-# Python (only used by optional external validators, never shipped)
+# Python bytecode from the hygiene helper and the test suites
 __pycache__/
 *.pyc
 
@@ -14,3 +14,6 @@ __pycache__/
 
 # Local agent worktrees and scratch (not part of the skill)
 .claude/
+
+# Staging directories scripts/sync-upstream leaves only if it is killed
+.vendor-sync.*/

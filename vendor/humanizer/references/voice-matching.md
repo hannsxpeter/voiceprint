@@ -5,7 +5,8 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `humanizer` repo, references/voice-matching.md
   (github.com/hannsxpeter/humanizer).
-Source commit: 17c544e11f4b7795835919dcd840604f1e60d09f
+Source commit: 09bf76d20d5213d4299a0c7043f16c254c2aaac7
+Source blob: a520f6b1a2baae076b0da9aca61cca14dd668104
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -16,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-05-29 from humanizer @ 17c544e
+Last synced: 2026-10-07 from humanizer @ 09bf76d
 =============================================================================
 -->
 
@@ -29,20 +30,23 @@ person's signature, which is far harder to flag and far more useful.
 
 ## Part 1: Voice sources, in priority order
 
-1. **A sample the user pasted or pointed to.** Their own earlier writing, an
-   excerpt, or a file path they named. This is the strongest source: it is the
-   real distribution, not a description of it. Read it and infer (Part 2).
+1. **Explicit input in the request.** This matches SKILL.md Step 0:
+   - *A sample the user pasted or pointed to.* Their own earlier writing, an
+     excerpt, or a file path they named. This is the strongest source: it is
+     the real distribution, not a description of it. Read it and infer
+     (Part 2).
+   - *A named, well-known author.* "make it sound like Hemingway / Joan
+     Didion / Paul Graham." Use your knowledge of that author's actual
+     habits, but match the *instincts* (sentence rhythm, diction, stance),
+     never copy their famous sentences.
 2. **A discovered profile file.** `VOICE.md`, `STYLE-GUIDE.md`,
    `voice-profile.{md,yaml,json}`, `.manuscript/STYLE-GUIDE.md`, or a voice
    section inside `AGENTS.md` / `CLAUDE.md`. Use the documented schema if it
    matches Part 3, otherwise read it as prose and extract what you can.
-3. **A named, well-known author.** "make it sound like Hemingway / Joan
-   Didion / Paul Graham." Use your knowledge of that author's actual habits,
-   but match the *instincts* (sentence rhythm, diction, stance), never copy
-   their famous sentences.
 
-If two sources conflict (a pasted sample and a stale STYLE-GUIDE.md), the live
-sample wins; mention the conflict in the output header.
+If sources conflict (a pasted sample and a stale STYLE-GUIDE.md, or a named
+author and a VOICE.md in the project), the explicit request wins; mention the
+conflict in the output header.
 
 ## Part 2: Reading a voice off a raw sample
 

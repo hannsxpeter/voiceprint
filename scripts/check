@@ -1,0 +1,13 @@
+#!/bin/sh
+# check - run every repository check: the hygiene and repository test suites,
+# then the vendored sync-header and reference validation. CI runs this same
+# script, so a local pass means the same checks pass in CI. Extra arguments
+# go to unittest (for example: scripts/check -v).
+
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$ROOT"
+
+python3 -m unittest discover -s tests "$@"
+sh scripts/check-vendor-headers

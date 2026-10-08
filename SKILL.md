@@ -14,13 +14,15 @@ description: >-
   the standalone humanizer skill) or a pure score with no rewrite (that is the
   standalone authenticity-check skill); voiceprint is the one-pass union of
   the two, not a replacement for either.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
-compatibility: claude-code, cursor, codex, antigravity, gemini-cli, pi-coder, opencode, copilot
+license: MIT
+allowed-tools: Read Glob Grep
+compatibility: >-
+  Requires Python 3.10 or newer for scripts/text_hygiene.py. Ships adapters
+  for Claude Code, Cursor, Codex, Antigravity, Gemini CLI, Pi, OpenCode, and
+  GitHub Copilot.
 metadata:
-  version: 1.4.0
+  version: 1.5.0
 ---
-
-<!-- Implements: P-MUST-01, P-MUST-02, P-MUST-03, P-MUST-04, P-MUST-05, P-MUST-06, P-MUST-07, P-MUST-08, P-MUST-09, P-SHOULD-01 -->
 
 # Voiceprint
 
@@ -84,10 +86,12 @@ Capture the submitted text as an immutable original. Read
 `vendor/authenticity-check/SKILL.md` and follow it exactly on that original
 text, including the reference files it points to under
 `vendor/authenticity-check/references/`. Produce its full authenticity report
-(band, score, flagged spans, what reads as human, score basis, caveats). This
-is the **before** read. The `Before` section must retain the submitted text
-byte-for-byte, and Step 1 must receive the same code-point sequence. Carry no
-target score out of it.
+(band, score, provenance signals, flagged spans, what reads as human, score
+basis, caveats). This is the **before** read. Its provenance preflight only
+inspects and reports the original's Unicode carriers; nothing is cleaned in
+this step. The `Before` section must retain the submitted text byte-for-byte,
+and Step 1 must receive the same code-point sequence. Carry no target score
+out of it.
 
 ### Step 2: Clean the working copy and apply humanizer's fixes (once)
 
@@ -95,8 +99,10 @@ At the start of this step, run the immutable original through
 `python3 scripts/text_hygiene.py clean --stats` exactly once, resolving the
 script relative to this `SKILL.md`. Python 3.10 or newer is required. For
 pasted text, prefer the command's standard input and pass the original bytes
-through the host process-input facility. Do not interpolate pasted text into a
-shell command. A user-provided path remains a read-only source.
+through the host process-input facility. Never interpolate pasted text into a
+shell command, including a heredoc: a line in the draft that matches the
+delimiter would end it and run the rest of the draft as commands. A
+user-provided path remains a read-only source.
 
 If the host cannot supply standard input and a temporary file is unavoidable,
 use its secure-temp facility, require owner-only permissions, and guarantee
@@ -112,11 +118,15 @@ original was not changed and do not claim cleanup succeeded.
 Pass only the cleaned working copy to one invocation of
 `vendor/humanizer/SKILL.md` and follow it exactly,
 including the reference files under `vendor/humanizer/references/`. Run its
-method as written (voice discovery, density pre-check, the multi-pass
-workflow, the meaning check). Apply it a single time. This produces the
-**after** text. Do not loop the rewrite, and do not let the Step 1 report set
-a goal for it; the rewrite's only job is to apply humanizer's known fixes
-once, faithfully, with humanizer's own restraint and anti-fabrication guards
+method as written (voice discovery, density pre-check, text-hygiene
+preflight, the multi-pass workflow, the meaning check). Apply it a single
+time. This produces the **after** text. Humanizer's own text-hygiene
+preflight and final recheck run inside this one invocation, on the already
+cleaned working copy. They are part of humanizer's method, not a second
+cleanup stage, and the helper's manifest remains the authoritative hygiene
+record. Do not loop the rewrite, and do not let the Step 1 report set a goal
+for it; the rewrite's only job is to apply humanizer's known fixes once,
+faithfully, with humanizer's own restraint and anti-fabrication guards
 intact. Do not add candidate generation, statistical watermark rewriting, or
 another cleanup stage.
 
@@ -125,9 +135,10 @@ another cleanup stage.
 Read `vendor/authenticity-check/SKILL.md` again and run it once on the
 **after** text, as a fresh, cold diagnosis with no carry-over from Step 1 and
 no score target. Its output here is the **residual**: what still reads as
-machine-touched after one honest rewrite. Report it. Do not act on it. If the
-residual read is poor, that is information for the user, not a trigger to
-rewrite again. The pass is over.
+machine-touched after one honest rewrite, plus any provenance signal still
+present in the after text. Report it. Do not act on it. If the residual read
+is poor, or a residual provenance signal remains, that is information for the
+user, not a trigger to clean or rewrite again. The pass is over.
 
 ## Hard rule: no iteration
 
@@ -148,8 +159,8 @@ Always deliver this exact structure. Never silently rewrite in place.
 [the original text, verbatim]
 
 ### Authenticity read (before)
-[the Step 1 authenticity-check report: band + score, flagged spans,
-reads-as-human, score basis, caveats]
+[the Step 1 authenticity-check report: band + score, provenance signals,
+flagged spans, reads-as-human, score basis, caveats]
 
 ### After
 [the Step 2 humanized text, the primary artifact]
@@ -160,8 +171,9 @@ preserved counts, then include humanizer's own "What changed" / "Deliberately
 left alone" / "Meaning check" sections, unaltered]
 
 ### Residual (after one pass)
-[the Step 3 re-diagnosis: band + score, the spans that still read as
-machine-touched. This is a report, not a to-do list.]
+[the Step 3 re-diagnosis: band + score, residual provenance signals, the
+spans that still read as machine-touched. This is a report, not a to-do
+list.]
 
 ### What remains is a human's call
 One short paragraph stating plainly that voiceprint ran exactly one pass, that
@@ -175,21 +187,29 @@ decoration. They are the forcing functions that make the no-loop rule visible
 to the user and impossible to quietly skip.
 
 This contract supersedes the vendored skills' own output wrappers. Fold
-humanizer's `Voice:` / `Density:` header line into "What changed" rather than
-printing it separately, and do not emit humanizer's standalone "Next step"
-(its offer to write the rewrite into a file) inside the pass; the "After" text
-above is the artifact. If the user gave a file path and wants it persisted,
-offer that once, after the full contract is delivered, never as a silent
-in-place rewrite. That optional, user-initiated write is the only reason this
-skill lists `Write` and `Edit`; the pass itself is otherwise read-only.
+humanizer's `Voice:`, `Density:`, and `Text hygiene:` header lines into
+"What changed" rather than printing them separately. Do not emit either
+vendored skill's standalone "Next step" inside the pass: humanizer's offers to
+write the rewrite into a file, and authenticity-check's sends the user back to
+a rewrite and a fresh read, which inside the residual would invite exactly the
+loop this skill forbids. The "After" text above is the artifact. If the user
+gave a file path and wants it persisted, offer that once, after the full
+contract is delivered, never as a silent in-place rewrite. The pass itself
+never edits files. Because it reads untrusted text, this skill pre-approves
+only read-only tools: running the hygiene helper, and writing a temporary
+input file when the host has no standard-input facility, go through the
+host's normal permission prompt.
 
 Inside `What changed`, identify hygiene findings only by their observable
 code point, Unicode name, action, count, and up to 10 zero-based code-point
 offsets. Include the helper's preservation reason for every deliberately
-preserved joiner or selector. If the manifest's findings list is empty, state
-explicitly that detected, removed, normalized, and deliberately preserved
-counts are all zero. These details stay inside `What changed`; do not add a
-seventh top-level section.
+preserved character. If the manifest's findings list
+is empty, state explicitly that detected, removed, normalized, and
+deliberately preserved counts are all zero. Report the manifest counts before
+humanizer's `Text hygiene:` line. That line describes the already cleaned
+working copy, so it can report nothing suspicious even when the helper removed
+characters. These details stay inside `What changed`; do not add a seventh
+top-level section.
 
 ## Scope and intended use
 
@@ -209,10 +229,11 @@ inherits it without exception.
 Text hygiene reports deterministic Unicode observations only. A removed
 control or normalized space does not reveal who created the text, whether a
 watermark was present, or how an external detector will classify the result.
-Do not claim vendor provenance, watermark removal, detector-signal removal, or
-a passing score. The hygiene helper does not inspect file metadata, document
-properties, images, audio, or video, and it does not perform NFKC or confusable
-letter conversion.
+The same holds for the provenance signals in either authenticity read. Do not
+claim vendor provenance, watermark removal, detector-signal removal, or a
+passing score. The hygiene helper does not inspect file metadata, document
+properties, images, audio, or video, and it does not perform NFKC or
+confusable letter conversion.
 
 ## Composition and sync obligation
 
@@ -235,7 +256,7 @@ by hand is the one move that breaks this product.
 Read these on demand, during the pass, not upfront:
 
 - `vendor/authenticity-check/SKILL.md` in Step 1 and Step 3, with its
-  `references/` (scoring, tell-patterns, do-not-flag, voice-matching,
-  examples).
+  `references/` (scoring, provenance-signals, tell-patterns, do-not-flag,
+  voice-matching, examples).
 - `vendor/humanizer/SKILL.md` in Step 2, with its `references/`
-  (tell-patterns, do-not-flag, voice-matching, examples).
+  (tell-patterns, do-not-flag, voice-matching, text-hygiene, examples).

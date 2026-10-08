@@ -1,1 +1,6 @@
 .godpowers/evidence.jsonl merge=union
+# Vendored files must stay byte-identical to their upstream blobs, which
+# scripts/check-vendor-headers verifies, so git never converts their line endings.
+vendor/** -text
+# The shell scripts stop working with CRLF line endings.
+scripts/** text eol=lf

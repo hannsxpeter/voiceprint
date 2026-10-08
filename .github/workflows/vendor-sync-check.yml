@@ -1,12 +1,14 @@
 name: vendor-sync-check
 
-# Implements: P-MUST-09
-
-# Fails the build if any file under vendor/ is missing a valid sync header.
-# Vendored content is synced copy, never the source of truth: the header is
-# the contract that records the true canonical upstream and source commit.
-# Also checks the hygiene unit suite, Python and shell syntax, eval JSON, and
-# feature-authored text constraints.
+# Runs every repository check on each push and pull request through
+# scripts/check: the hygiene and repository test suites (which also cover
+# shell syntax, eval JSON, version consistency, adapter routing, workflow
+# pinning, and the dash policy) and the vendored sync-header and reference
+# validation. Vendored content is synced copy, never the source of truth:
+# the header is the contract that records the true canonical upstream and
+# source commit. On pushes, a vendored copy that has fallen behind its
+# upstream is reported as a warning and never fails the build. Checkout keeps
+# no credentials, so code from a pull request cannot read the token.
 
 on:
   push:
@@ -20,57 +22,34 @@ permissions:
 jobs:
   vendor-sync-check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the documented minimum for scripts/text_hygiene.py.
+        python-version: ["3.10", "3.14"]
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
-      - name: Lint shell scripts (syntax only)
-        run: sh -n scripts/sync-upstream && sh -n scripts/check-vendor-headers && sh -n scripts/check-upstream-freshness
+      - name: Run repository checks
+        run: sh scripts/check -v
 
-      - name: Validate that evals.json parses
-        run: python3 -c "import json; json.load(open('evals/evals.json'))"
-
-      - name: Run text hygiene unit tests
-        run: python3 -m unittest discover -s tests -v
-
-      - name: Check text hygiene Python syntax
-        run: python3 -m py_compile scripts/text_hygiene.py tests/test_text_hygiene.py
-
-      - name: Reject disallowed Unicode dashes
+      - name: Report upstream freshness (warning only)
+        if: matrix.python-version == '3.14' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          paths = [
-              Path("scripts/text_hygiene.py"),
-              Path("tests/test_text_hygiene.py"),
-              Path("SKILL.md"),
-              Path("AGENTS.md"),
-              Path("GEMINI.md"),
-              Path(".cursor/rules/voiceprint.mdc"),
-              Path(".github/copilot-instructions.md"),
-              Path("evals/evals.json"),
-              Path("README.md"),
-              Path("CHANGELOG.md"),
-              Path(".github/workflows/vendor-sync-check.yml"),
-          ]
-          forbidden = {chr(0x2013): "U+2013", chr(0x2014): "U+2014"}
-          failures = []
-          for path in paths:
-              for line_number, line in enumerate(
-                  path.read_text(encoding="utf-8").splitlines(), start=1
-              ):
-                  for character, label in forbidden.items():
-                      if character in line:
-                          failures.append(f"{path}:{line_number}: contains {label}")
-          if failures:
-              raise SystemExit("\n".join(failures))
-          PY
-
-      - name: Validate vendored sync headers
-        run: sh scripts/check-vendor-headers
+          status=0
+          sh scripts/check-upstream-freshness || status=$?
+          if [ "$status" -eq 1 ]; then
+            echo "::warning title=Vendored skills are behind upstream::Run scripts/sync-upstream, then scripts/check-vendor-headers, and commit vendor/."
+          elif [ "$status" -ne 0 ]; then
+            echo "::notice title=Upstream freshness not checked::The freshness check could not reach the upstream repositories."
+          fi

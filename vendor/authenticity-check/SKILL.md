@@ -5,8 +5,8 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `authenticity-check` repo, SKILL.md
   (github.com/hannsxpeter/authenticity-check).
-Source commit: b20c10a8407e578b76cb552c4b344583dde724bf
-Source blob: 10417280aef2cbee66aaa140d0d6e84f95f8de80
+Source commit: d5de843f81b7e88a1638ddcf68548559ec631b36
+Source blob: 7f8b051cb0cfde3190e19dda68527e84c94523ac
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -17,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-10-07 from authenticity-check @ b20c10a
+Last synced: 2026-10-07 from authenticity-check @ d5de843
 =============================================================================
 -->
 
@@ -38,7 +38,7 @@ description: >-
   remove marks, or make it sound like someone.
 allowed-tools: Read, Glob, Grep
 metadata:
-  version: 1.2.1
+  version: 1.2.2
   compatibility: claude-code, cursor, codex, antigravity, gemini-cli, pi-coder, opencode, copilot, windsurf, cline, continue, zed, aider
 ---
 
@@ -177,11 +177,11 @@ score by itself.
 
 Before scoring, skim the whole text once and judge how heavily it is
 AI-marked. Count only the **dead-giveaway** tells, not the weak surface
-signals: chat-UI contamination (pattern 31), knowledge-cutoff disclaimers
-(29), collaborative chatbot artifacts (28), significance inflation (1),
-promotional language (5), AI-vocabulary clustering (16), sycophantic tone (7),
-generic positive conclusion (13). Estimate roughly how many appear per 100
-words, then set the scrutiny level and announce it in the output header:
+signals: chat-UI contamination (pattern 31), knowledge-cutoff and capability
+disclaimers (29), collaborative chatbot artifacts (28), significance inflation
+(1), promotional language (5), AI-vocabulary clustering (16), sycophantic tone
+(7), generic positive conclusion (13). Estimate roughly how many appear per
+100 words, then set the scrutiny level and announce it in the output header:
 
 - **Low (about 0 to 2 per 100 words): light scrutiny**, unless the rhythm is
   uniform and no human markers are present (the relocated-signature override

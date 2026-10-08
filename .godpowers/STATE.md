@@ -11,11 +11,10 @@ updated: 2026-10-08
 Give writers and editors who use AI coding tools one honest pass over a draft: diagnose it, clean and rewrite it once, and report what is left. Success means the vendored skills stay current with their upstreams, the hygiene helper never alters valid text, and every document matches what the code and the vendored skills actually do.
 
 ## Now
-- The three remaining low risks are fixed and merged to `main` through PR hannsxpeter/voiceprint#11, unreleased (the changelog's `[Unreleased]` section): hygiene policy 3 keeps typographic spaces and the directional marks that change the display, Python 3.11 is the documented and tested minimum, and maintainer guidance moved from `AGENTS.md` to the new `CONTRIBUTING.md`. After five review and security rounds, the mark rule applies the bidi algorithm itself, resolves bracket pairs exactly, and charges every check to its budget; checked against ICU and GNU FriBidi, every kept mark changes the display and crafted inputs keep no hidden mark.
-- v1.5.2 is the latest release (PR hannsxpeter/voiceprint#9, merged as 527b6e5), vendoring humanizer 1.3.1 and authenticity-check 1.2.3. `main` is protected by the "Protect main" ruleset, which requires the `vendor-sync-check (3.11)` and `vendor-sync-check (3.14)` jobs.
+- v1.6.0 is the latest release (PR hannsxpeter/voiceprint#12, merged as 194ff7d; tag and GitHub release published). It closes the three remaining low risks merged through PR hannsxpeter/voiceprint#11: hygiene policy 3 keeps typographic spaces and the directional marks that change the display, Python 3.11 is the documented and tested minimum, and maintainer guidance moved from `AGENTS.md` to the new `CONTRIBUTING.md`. After five review and security rounds, the mark rule applies the bidi algorithm itself, resolves bracket pairs exactly, and charges every check to its budget; checked against ICU, every kept mark changes the display (GNU FriBidi agrees apart from its one departure from the standard), and crafted inputs keep no hidden mark.
+- The vendored skills are humanizer 1.3.1 and authenticity-check 1.2.3, unchanged since v1.5.2. `main` is protected by the "Protect main" ruleset, which requires the `vendor-sync-check (3.11)` and `vendor-sync-check (3.14)` jobs.
 
 ## Next
-- Cut 1.6.0 when the maintainer asks.
 - Re-sync `vendor/` whenever upstream-freshness reports a re-sync as due.
 
 ## Risks

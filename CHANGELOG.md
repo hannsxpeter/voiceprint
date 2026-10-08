@@ -36,6 +36,9 @@ to semantic versioning.
     within the budget. When the budget runs out, the paragraph being judged
     and every later one keep none of their marks, and so does a paragraph
     whose marks still lack current verdicts after 8 passes.
+  - Kept characters are preserved findings, not actionable ones, so
+    `inspect` exits 0 when they are its only findings, where policy 2 exited
+    1 for the same text.
 - Python 3.11 is the documented minimum, and CI tests 3.11 and 3.14, because
   Python 3.10 reaches end of life in October 2026.
 - `SKILL.md` stops the pass on any non-zero exit from the hygiene helper, not

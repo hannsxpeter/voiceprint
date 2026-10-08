@@ -1,6 +1,6 @@
 # voiceprint
 
-![version](https://img.shields.io/badge/version-1.5.2-blue)
+![version](https://img.shields.io/badge/version-1.6.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![type](https://img.shields.io/badge/type-thin%20orchestrator-purple)
 ![pass](https://img.shields.io/badge/behavior-one%20pass%2C%20no%20loop-red)
@@ -149,22 +149,22 @@ paragraph displays. A left-to-right mark (U+200E), right-to-left mark
 contains right-to-left letters and no embeddings, overrides, or isolates.
 There the helper applies the Unicode Bidirectional Algorithm (numbers,
 neutral characters, bracket pairs, tabs, and the paragraph direction) to the
-text between the nearest letters around the mark, once with the mark and once
-without, and keeps the mark when the paragraph direction, the order of those
-characters, their mirroring, or a combining mark's attachment would differ.
-Bracket pairs are resolved exactly: the text judged widens over every pair
-whose resolution the mark could change, such as an English phrase in
-parentheses inside Hebrew text, together with the letter before it.
+text between the nearest letters around the mark, once with the mark and
+once without, and keeps the mark when the paragraph direction, the order of
+those characters, their mirroring, or a combining mark's attachment would
+differ. Bracket pairs are resolved exactly: the text judged widens over
+every pair whose resolution the mark could change, such as an English phrase
+in parentheses inside Hebrew text, together with the letter before it.
 Characters the helper removes count as already gone, and unassigned code
-points take their Unicode default direction (the pinned defaults match
-ICU's Unicode 17.0 data for every unassigned code point). Each mark is judged
+points take their Unicode default direction (the pinned defaults match ICU's
+Unicode 17.0 data for every unassigned code point). Each mark is judged
 against the marks that remain, and judging repeats until a pass removes
-nothing (at most 8 passes). Only the first mark of a run can stay, and a mark
-is removed when it sits between a letter and its combining mark, more than
-64 characters from the nearest letter, or where the text to judge would
-span more than 4,096 characters. To bound adversarial input, judging has a
-budget of 4,000,000 steps per text: one for each character, bracket, or mark
-it reads, and three more for each character it resolves. When that runs out,
+nothing (at most 8 passes). Only the first mark of a run can stay, and a
+mark is removed when it sits directly before a combining mark, more than 64
+characters from the nearest letter, or where the text to judge would span
+more than 4,096 characters. To bound adversarial input, judging has a budget
+of 4,000,000 steps per text: one for each character, bracket, or mark it
+reads, and three more for each character it resolves. When that runs out,
 the paragraph being judged and every later one keep none of their marks, and
 so does a paragraph whose marks still lack verdicts for their present
 surroundings after 8 passes. In testing on an Apple M4 Max, 4 MiB of short
@@ -181,25 +181,26 @@ that is its job, but only where the text around it shows the change. These
 rules are policy version 3; version 2 normalized every space variant and
 removed every directional mark.
 
-The directional-mark rule is checked against two independent
-implementations of the bidirectional algorithm, ICU (with Unicode 17.0 data)
-and GNU FriBidi, on 40,000 random paragraphs from two generators that mix
-Hebrew, Arabic, and Latin letters, both kinds of digits with separators,
-nested brackets, tabs, combining marks, no-break spaces, stray selectors,
-unassigned code points, and explicit controls. Measured against the same
-text with the helper's other removals and normalizations applied, every
-cleaned paragraph displayed like the original apart from the removals listed
-above, except one in which ICU leaves an angle-bracket pair unpaired around
-an inner U+2329 and U+232A pair that holds no strong character (FriBidi and
-the helper pair them, as the standard requires). Every one of 13,528 kept
-marks changed the display, and cleaning the cleaned copy changed nothing,
-which holds whenever both cleanings finish judging within the budget. Where
-one library departs from the standard (FriBidi stops pairing a bracket that
-follows a combining mark, and ICU leaves a combining mark after a resolved
-bracket unresolved), the helper follows the standard's text. In realistic Hebrew, Arabic, and mixed prose,
-and in inputs built to pack marks around parentheticals, no position lets an
-invisible mark survive without a visible effect. With FriBidi installed, an
-opt-in test repeats a smaller version of the check:
+The directional-mark rule is checked against ICU's implementation of the
+bidirectional algorithm (with Unicode 17.0 data) on 40,000 random paragraphs
+from two generators that mix Hebrew, Arabic, and Latin letters, both kinds
+of digits with separators, nested brackets, tabs, combining marks, no-break
+spaces, stray selectors, unassigned code points, and explicit controls.
+Measured against the same text with the helper's other removals and
+normalizations applied, every cleaned paragraph displayed like the original
+apart from the removals listed above, except one in which ICU leaves an
+angle-bracket pair unpaired around an inner U+2329 and U+232A pair that
+holds no strong character (FriBidi and the helper pair them, as the standard
+requires). Every one of 13,528 kept marks changed the display, and cleaning
+the cleaned copy changed nothing, which holds whenever both cleanings finish
+judging within the budget. GNU FriBidi agrees on the same paragraphs except
+where it departs from the standard by not pairing a bracket that follows a
+combining mark. There, and where ICU leaves a combining mark after a
+resolved bracket unresolved, the helper follows the standard's text. In
+realistic Hebrew, Arabic, and mixed prose, and in inputs built to pack marks
+around parentheticals, no position lets an invisible mark survive without a
+visible effect. With FriBidi installed, an opt-in test repeats a smaller
+version of the check:
 
 ```sh
 VOICEPRINT_FRIBIDI=1 python3 -m unittest -v tests.test_text_hygiene.BidiReferenceTests
@@ -244,8 +245,13 @@ writes exact UTF-8 bytes to standard output and exits 0 on success. With
 reads standard input, which is preferred for pasted text.
 
 The 200 ms p95 release gate is opt-in so routine CI does not depend on noisy
-wall-clock timing. Run it on the release reference runner and retain its
-printed p95 result with the release evidence:
+wall-clock timing. Its input, 100,000 code points of letters and zero-width
+spaces, holds no directional marks, so it times the cleanup every text gets.
+Text dense with right-to-left letters and directional marks also pays for
+the mark rule and took about 150 to 210 ms per 100,000 code points in
+testing, two to three times as long as under policy 2. Run the gate on the
+release reference runner and record its printed p95 with the release
+evidence, as CONTRIBUTING.md describes:
 
 ```sh
 VOICEPRINT_RELEASE_BENCHMARK=1 python3 -m unittest -v tests.test_text_hygiene.TextHygieneApiTests.test_p95_is_within_budget_for_one_hundred_thousand_code_points

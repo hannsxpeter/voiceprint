@@ -32,8 +32,9 @@ quiet machine:
   VOICEPRINT_FRIBIDI=1 python3 -m unittest -v tests.test_text_hygiene.BidiReferenceTests
   ```
 
-- The release benchmark holds cleanup of 100,000 code points to a 200 ms
-  p95 (`VOICEPRINT_RELEASE_BENCHMARK=1`, also in the README).
+- The release benchmark holds cleanup of 100,000 code points of letters and
+  zero-width spaces to a 200 ms p95 (`VOICEPRINT_RELEASE_BENCHMARK=1`, also
+  in the README).
 
 ## Changing hygiene behavior
 
@@ -55,16 +56,23 @@ describes. `scripts/check-upstream-freshness` reports when a re-sync is due.
 1. Set the new version in `SKILL.md` (`metadata.version`) and in the README
    badge, and move the `[Unreleased]` changelog entries under it with the
    release date and a compare link.
-2. Merge the release pull request once CI passes.
-3. Tag the merge commit and push the tag:
+2. Run the release benchmark through the Godpowers CLI, so its printed p95
+   is kept with the release evidence:
+
+   ```sh
+   node ~/.claude/godpowers/bin/godpowers.js verify "VOICEPRINT_RELEASE_BENCHMARK=1 python3 -m unittest -v tests.test_text_hygiene.TextHygieneApiTests.test_p95_is_within_budget_for_one_hundred_thousand_code_points"
+   ```
+
+3. Merge the release pull request once CI passes.
+4. Tag the merge commit and push the tag:
 
    ```sh
    git tag -a vX.Y.Z -m "voiceprint vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
-4. Publish a GitHub release for the tag from the changelog entry.
-5. Record the release in `.godpowers/STATE.md` in a follow-up pull request.
+5. Publish a GitHub release for the tag from the changelog entry.
+6. Record the release in `.godpowers/STATE.md` in a follow-up pull request.
 
 ## Project state
 

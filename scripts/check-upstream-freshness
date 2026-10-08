@@ -73,20 +73,29 @@ for entry in $SKILLS; do
     gha "- \`$dir\`: current (\`$s7\`)"
   else
     # Upstream moved. It matters only if a commit since the stamp changed a
-    # vendored path. A file list of 300 or more may be truncated, so it counts
-    # as a change.
+    # vendored path, which the compare API can answer only when the stamp is an
+    # ancestor of the branch (status "ahead"); any other status is stale. A file
+    # list of 300 or more may be truncated, so it counts as a change, and a
+    # rename out of a vendored path counts through its previous name.
     summary=$(gh api "repos/$repo/compare/$stamped...$latest" --jq '
-      "\(.ahead_by)|" + (if ((.files // []) | length) >= 300 then "many files"
-        else ([(.files // [])[].filename
-               | select(. == "SKILL.md" or startswith("references/"))] | join(", "))
+      "\(.status)|\(.ahead_by // "?")|" + (if ((.files // []) | length) >= 300 then "many files"
+        else ([(.files // [])[] | (.filename, (.previous_filename // empty))
+               | select(. == "SKILL.md" or startswith("references/"))] | unique | join(", "))
         end)' 2>/dev/null || true)
     if [ -z "$summary" ]; then
       printf 'ERROR %s: could not compare %s with %s@%s (auth/network?)\n' "$dir" "$s7" "$repo" "$branch" >&2
       gha "- \`$dir\`: error (could not compare with $repo)"; err=1; continue
     fi
-    behind=${summary%%|*}
-    touched=${summary#*|}
-    if [ -z "$touched" ]; then
+    compare_status=${summary%%|*}
+    rest=${summary#*|}
+    behind=${rest%%|*}
+    touched=${rest#*|}
+    if [ "$compare_status" != "ahead" ]; then
+      printf 'STALE %-20s %s is not an ancestor of %s@%s (%s; compare status %s); re-sync from the default branch\n' \
+        "$dir" "$s7" "$repo" "$branch" "$l7" "$compare_status"
+      gha "- \`$dir\`: **re-sync due**: vendored \`$s7\` is not an ancestor of $branch (\`$l7\`, status $compare_status)"
+      stale=1
+    elif [ -z "$touched" ]; then
       printf 'OK    %-20s content current: %s@%s (%s) is %s commit(s) past %s, none touching SKILL.md or references/\n' \
         "$dir" "$repo" "$branch" "$l7" "$behind" "$s7"
       gha "- \`$dir\`: content current (vendored \`$s7\`; $behind newer upstream commit(s) change no vendored path)"

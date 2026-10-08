@@ -214,19 +214,24 @@ printf 'sync-upstream: stamp date=%s\n\n' "$SYNC_DATE"
 # linger because the tree is built from empty.
 WORK=$(mktemp -d "$ROOT/.vendor-sync.XXXXXX") \
   || die "could not create a work directory in $ROOT"
-NEW="$WORK/new"
-mkdir "$NEW"
 
 # On any exit, put the previous tree back if the swap did not finish, then
-# remove the work directory.
+# remove the work directory. If even the restore fails, keep the previous tree
+# where it is and say so.
 cleanup() {
   if [ ! -d "$ROOT/vendor" ] && [ -d "$WORK/old" ]; then
-    mv "$WORK/old" "$ROOT/vendor"
+    if ! mv "$WORK/old" "$ROOT/vendor"; then
+      printf 'sync-upstream: could not restore vendor/; the previous tree is in %s/old\n' "$WORK" >&2
+      return
+    fi
   fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
+
+NEW="$WORK/new"
+mkdir "$NEW"
 
 # --- humanizer skill (canonical: humanizer) ---------------------------------
 vendor_file "$HZ" "SKILL.md" "vendor/humanizer/SKILL.md" "humanizer" "$HZ_SHA" "$HZ_SHORT" 0

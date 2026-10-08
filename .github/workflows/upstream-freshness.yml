@@ -1,13 +1,15 @@
 name: upstream-freshness
 
 # Fails when an upstream commit since the vendored stamp changed a vendored
-# path (SKILL.md or references/), so the one-directional sync obligation
-# cannot silently lapse (the vendored copies once drifted a full version
-# behind). Upstream commits that touch only CI or docs do not count. Scheduled weekly and runnable on demand;
-# it never runs on push or pull_request, so it never blocks normal development
-# (vendor-sync-check reports the same staleness there as a warning). A stale
-# or unverifiable result fails the run, which surfaces in the Actions tab and
-# notifies the maintainer; clear it by re-syncing with scripts/sync-upstream.
+# path (SKILL.md or references/), or the stamp is not an ancestor of the
+# upstream branch, so the one-directional sync obligation cannot silently
+# lapse (the vendored copies once drifted a full version behind). Upstream
+# commits that touch only CI or docs do not count. Scheduled weekly and
+# runnable on demand; it never runs on push or pull_request, so it never
+# blocks normal development (vendor-sync-check reports the same staleness
+# there as a warning). A stale or unverifiable result fails the run, which
+# surfaces in the Actions tab and notifies the maintainer; clear it by
+# re-syncing with scripts/sync-upstream.
 #
 # GitHub disables scheduled workflows in a public repository after 60 days
 # without repository activity. If the Actions tab shows this workflow as

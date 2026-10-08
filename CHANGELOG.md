@@ -53,9 +53,10 @@ to semantic versioning.
   reference file that was not vendored. The fixed list would have silently
   skipped both reference files the upstreams added.
 - `scripts/check-upstream-freshness` reports a re-sync as due only when an
-  upstream commit since the stamp changed `SKILL.md` or a `references/` file,
-  so commits that touch only an upstream's CI or documentation no longer
-  raise false alarms.
+  upstream commit since the stamp changed `SKILL.md` or a `references/` file
+  (renames included), or when the stamped commit is not an ancestor of the
+  upstream branch, so commits that touch only an upstream's CI or
+  documentation no longer raise false alarms.
 - One entry point, `scripts/check`, runs every repository check, and CI runs
   it on Python 3.10 (the documented minimum) and 3.14. The new
   `tests/test_repository.py` covers frontmatter, version consistency, adapter

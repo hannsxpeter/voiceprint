@@ -320,8 +320,9 @@ not an option: when the upstream criteria change, the vendored copies must be
 re-pulled or the product silently disagrees with the skills it advertises.
 `scripts/check-upstream-freshness` compares each vendored skill's stamped
 commit with its upstream's default branch and reports a re-sync as due when a
-newer upstream commit changed `SKILL.md` or a `references/` file; commits that
-touch only an upstream's CI, README, or other tooling do not count. A
+newer upstream commit changed `SKILL.md` or a `references/` file, or when the
+stamped commit is not on that branch; commits that touch only an upstream's
+CI, README, or other tooling do not count. A
 scheduled `upstream-freshness` workflow runs it weekly and fails when a
 re-sync is due, and every push reports the same staleness as a warning, so
 this obligation does not depend on remembering. GitHub pauses scheduled workflows after 60 days without

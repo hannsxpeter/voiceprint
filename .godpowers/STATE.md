@@ -3,7 +3,7 @@ godpowers: 7
 project: voiceprint
 stage: done
 verify: "sh scripts/check"
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 # voiceprint
 
@@ -11,7 +11,7 @@ updated: 2026-10-07
 Give writers and editors who use AI coding tools one honest pass over a draft: diagnose it, clean and rewrite it once, and report what is left. Success means the vendored skills stay current with their upstreams, the hygiene helper never alters valid text, and every document matches what the code and the vendored skills actually do.
 
 ## Now
-- v1.5.1 is released: PR hannsxpeter/voiceprint#7 merged as 3062890, tag v1.5.1 and its GitHub release are published. It re-syncs authenticity-check to its v1.2.2 release (hannsxpeter/authenticity-check#1), so voiceprint vendors humanizer 1.3.1 and authenticity-check 1.2.2 and both skills use the same pattern names. v1.5.0 (PR hannsxpeter/voiceprint#4) shipped the larger maintenance release; `main` is protected by the "Protect main" ruleset.
+- v1.5.2 is released: PR hannsxpeter/voiceprint#9 merged as 527b6e5, tag v1.5.2 and its GitHub release are published. It re-syncs authenticity-check to its v1.2.3 release, so voiceprint vendors humanizer 1.3.1 and authenticity-check 1.2.3. Earlier: v1.5.1 re-synced authenticity-check 1.2.2, and v1.5.0 (PR hannsxpeter/voiceprint#4) shipped the larger maintenance release. `main` is protected by the "Protect main" ruleset.
 
 ## Next
 - Decide the open question in PLAN.md about no-break spaces and directional marks.

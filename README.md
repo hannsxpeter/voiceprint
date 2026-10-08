@@ -200,7 +200,7 @@ such text.
 | Codex | `AGENTS.md` | Clone this repo into (or beside) your project; Codex reads `AGENTS.md` |
 | Antigravity | `AGENTS.md` | Same as Codex: keep `AGENTS.md` + `SKILL.md` + `scripts/text_hygiene.py` + `vendor/` in the workspace |
 | Gemini CLI | `GEMINI.md` | Keep `GEMINI.md` + `SKILL.md` + `scripts/text_hygiene.py` + `vendor/` in the project Gemini runs in |
-| Pi Coder | `AGENTS.md` | Point Pi Coder at this repo / its `AGENTS.md` |
+| Pi | `AGENTS.md` | Point Pi at this repo / its `AGENTS.md` |
 | OpenCode | `AGENTS.md` or `SKILL.md` | Copy the skill into OpenCode's skills directory, or keep `AGENTS.md` in the project |
 | GitHub Copilot | `.github/copilot-instructions.md` | Copy `.github/copilot-instructions.md` + `SKILL.md` + `scripts/text_hygiene.py` + `vendor/` into the target repository |
 
@@ -208,12 +208,15 @@ Every adapter points the agent at the same `SKILL.md`, deterministic hygiene
 helper, and vendored skills under `vendor/`, so the one-pass behavior is
 identical across tools.
 
-voiceprint ships adapters for the eight tools above. Both upstream skills
-also ship adapters for Windsurf, Cline, Continue, Zed, and Aider, which
-voiceprint does not provide yet. The vendored skills' frontmatter is
-upstream's, synced verbatim: humanizer no longer declares `compatibility`,
-and authenticity-check lists its hosts under `metadata.compatibility`.
-Neither is a claim that voiceprint provides an adapter for those tools.
+voiceprint ships and documents adapters for the eight tools above (Pi was
+formerly listed as Pi Coder). The upstream skills also document Devin
+Desktop (formerly Windsurf), Cline, Continue, Zed, and Aider. Several of
+those read `AGENTS.md` or `.github/copilot-instructions.md`, which voiceprint
+ships, but voiceprint makes no support claim for them. The vendored skills'
+frontmatter is upstream's, synced verbatim: humanizer no longer declares
+`compatibility`, and authenticity-check lists its hosts under
+`metadata.compatibility`. Neither is a claim that voiceprint provides an
+adapter for those tools.
 
 ## Usage
 
@@ -300,9 +303,9 @@ commit with its upstream's default branch. A scheduled `upstream-freshness`
 workflow runs it weekly and fails when a re-sync is due, and every push
 reports the same staleness as a warning, so this obligation does not depend
 on remembering. GitHub pauses scheduled workflows after 60 days without
-repository activity, which is how the vendored copies fell two upstream
-releases behind before 1.5.0. If the Actions tab shows `upstream-freshness`
-as disabled, re-enable it there or with
+repository activity, which is how the vendored copies missed every upstream
+release after 1.1.1 until 1.5.0. If the Actions tab shows
+`upstream-freshness` as disabled, re-enable it there or with
 `gh workflow enable upstream-freshness.yml`.
 
 ## Checks
@@ -328,7 +331,7 @@ watermark discovery, provenance attribution, or detector-signal removal.
 
 ```
 SKILL.md                          orchestrator: the one-pass rule, output contract, scope
-AGENTS.md                         cross-tool entry point (Codex, Antigravity, OpenCode, Pi Coder)
+AGENTS.md                         cross-tool entry point (Codex, Antigravity, OpenCode, Pi)
 GEMINI.md                         Gemini CLI context
 .cursor/rules/voiceprint.mdc      Cursor project rule
 .github/copilot-instructions.md   GitHub Copilot instructions

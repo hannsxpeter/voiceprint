@@ -4,7 +4,9 @@ scripts, workflows, and the dash policy."""
 
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,6 +25,19 @@ CONTRACT_SECTIONS = (
     "What changed",
     "Residual",
     "What remains is a human's call",
+)
+# Rules every adapter must restate, compared case-insensitively.
+ADAPTER_RULES = (
+    "report the provenance signals in both authenticity reads without acting on them",
+    "do not emit either vendored skill's standalone next step inside the pass",
+)
+SKILL_CONTRACT_HEADINGS = (
+    "### Before",
+    "### Authenticity read (before)",
+    "### After",
+    "### What changed",
+    "### Residual (after one pass)",
+    "### What remains is a human's call",
 )
 SHELL_SCRIPTS = (
     "scripts/check",
@@ -53,6 +68,11 @@ def read(relative_path):
 def normalized(text):
     """Collapse whitespace so a phrase wrapped across lines still matches."""
     return " ".join(text.split())
+
+
+def rule_text(text):
+    """Normalize for rule matching: one line, lowercase, no double quotes."""
+    return normalized(text).lower().replace('"', "")
 
 
 def skill_frontmatter():
@@ -114,7 +134,6 @@ class RepositoryConsistencyTests(unittest.TestCase):
             "vendor/authenticity-check/SKILL.md",
             "vendor/humanizer/SKILL.md",
             "scripts/text_hygiene.py clean --stats",
-            "Next step",
             *CONTRACT_SECTIONS,
         )
         for adapter in ADAPTERS:
@@ -124,6 +143,25 @@ class RepositoryConsistencyTests(unittest.TestCase):
                     self.assertTrue(
                         phrase in text, f"{adapter} does not mention {phrase!r}"
                     )
+            rules = rule_text(read(adapter))
+            for rule in ADAPTER_RULES:
+                with self.subTest(adapter=adapter, rule=rule):
+                    self.assertTrue(rule in rules, f"{adapter} lacks the rule {rule!r}")
+
+    def test_skill_states_the_contract_and_its_loop_guards(self):
+        skill = read("SKILL.md")
+        rules = rule_text(skill)
+
+        for heading in SKILL_CONTRACT_HEADINGS:
+            with self.subTest(heading=heading):
+                self.assertIn(f"\n{heading}\n", skill)
+        for rule in (
+            "scripts/text_hygiene.py clean --stats",
+            "do not emit either vendored skill's standalone next step inside the pass",
+            "not a trigger to clean or rewrite again",
+        ):
+            with self.subTest(rule=rule):
+                self.assertTrue(rule in rules, f"SKILL.md lacks {rule!r}")
 
     def test_evals_are_well_formed(self):
         evals = json.loads(read("evals/evals.json"))
@@ -177,6 +215,65 @@ class RepositoryConsistencyTests(unittest.TestCase):
                         failures.append(f"{name}:{line_number}: contains {label}")
 
         self.assertEqual(failures, [])
+
+
+class VendorHeaderCheckTests(unittest.TestCase):
+    """Run scripts/check-vendor-headers against altered copies of vendor/."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        (self.root / "scripts").mkdir()
+        shutil.copy2(ROOT / "scripts" / "check-vendor-headers", self.root / "scripts")
+        shutil.copytree(ROOT / "vendor", self.root / "vendor")
+
+    def run_check(self):
+        return subprocess.run(
+            ["sh", str(self.root / "scripts" / "check-vendor-headers")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+    def test_passes_on_the_committed_vendor_tree(self):
+        result = self.run_check()
+
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+    def test_fails_when_a_referenced_file_is_not_vendored(self):
+        (self.root / "vendor/humanizer/references/text-hygiene.md").unlink()
+
+        result = self.run_check()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            b"names references/text-hygiene.md, which is not vendored",
+            result.stderr,
+        )
+
+    def test_fails_when_a_vendored_file_lacks_its_header(self):
+        path = self.root / "vendor/humanizer/references/examples.md"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.split("-->\n\n", 1)[1], encoding="utf-8")
+
+        result = self.run_check()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"missing sentinel line", result.stderr)
+
+    def test_fails_when_shared_criteria_name_the_wrong_upstream(self):
+        path = self.root / "vendor/authenticity-check/references/tell-patterns.md"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(
+            text.replace("the `humanizer` repo", "the `authenticity-check` repo", 1),
+            encoding="utf-8",
+        )
+
+        result = self.run_check()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"shared criteria must name the humanizer repo", result.stderr)
 
 
 if __name__ == "__main__":

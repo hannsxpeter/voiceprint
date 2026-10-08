@@ -5,7 +5,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `humanizer` repo, SKILL.md
   (github.com/hannsxpeter/humanizer).
-Source commit: 978116a9ac2b094b7a6bb5f6a482b0eee41f3084
+Source commit: a5f8a3319871f8796582c42621d9e48f7975da45
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -16,7 +16,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-10-07 from humanizer @ 978116a
+Last synced: 2026-10-07 from humanizer @ a5f8a33
 =============================================================================
 -->
 
@@ -34,9 +34,10 @@ description: >-
   generic, like ChatGPT, or otherwise off; match a draft to a writer or named
   author; edit for authentic voice and rhythm; or clean zero-width characters,
   exotic spaces, bidi controls, and similar hidden text residue.
-allowed-tools: Read, Write, Edit, Glob, Grep
+license: MIT
+allowed-tools: Read Write Edit Glob Grep
 metadata:
-  version: 1.2.1
+  version: 1.3.0
 ---
 
 # Humanizer
@@ -150,7 +151,9 @@ migration, temporarily.
 
 Stance mode raises fabrication risk, so the Pass 3 self-audit and the Meaning
 check apply with extra force, and the output header must show stance is on so
-the user can dial it back.
+the user can dial it back. Stance is a requested change of register, so it
+applies even when the density pre-check picks a light pass; density still
+decides how hard to hunt for tells.
 
 ## Step 0c: Density pre-check (match effort to evidence)
 
@@ -197,7 +200,9 @@ characters do not count toward the density score and do not establish AI
 authorship.
 
 This is a pure-prompt skill, so inspection is limited to characters the host
-preserves and exposes. If exact codepoint inspection is unavailable, say
+preserves and exposes. When the prose is in a file and a search tool is
+available, also run the codepoint search in `references/text-hygiene.md`. If
+you can neither see the characters directly nor search a file, say
 `not verifiable in this interface` in the output header. Never report the
 text as universally watermark-free.
 
@@ -217,9 +222,10 @@ distribution, never their specific sentences. In generic mode, skip this pass.
 ### Pass 2: Tell removal
 
 Load `references/tell-patterns.md`. Walk the prose against the 32-pattern
-catalog (six families), scoped to the pass intensity chosen in Step 0c. For each genuine flag, fix the *underlying thought*,
-not the surface token: ask "what is actually being said here?" and write that,
-concretely, at the length the thought deserves. Preserve meaning exactly.
+catalog (six families), scoped to the pass intensity chosen in Step 0c. For
+each genuine flag, fix the *underlying thought*, not the surface token: ask
+"what is actually being said here?" and write that, concretely, at the length
+the thought deserves. Preserve meaning exactly.
 
 Concreteness must come from the source or from the user, never from you. If
 the source is vague and you have no real detail to restore, the honest fix is
@@ -248,9 +254,11 @@ b. Did I overcorrect? Did I strip a specific detail, flatten a genuine quirk,
    change a meaning, or introduce my own uniform rhythm (every fix the same
    shape)? Revert any such damage.
 
-Finally, recheck the rewritten prose using `references/text-hygiene.md`.
-Confirm that suspicious carriers were removed and load-bearing Unicode was
-preserved. Report only changes you could actually verify.
+Finally, recheck the rewritten prose for suspicious characters, including any
+your own edits introduced. If Step 0d found or cleaned any, confirm against
+`references/text-hygiene.md` that suspicious carriers were removed and
+load-bearing Unicode was preserved. Report only changes you could actually
+verify.
 
 If Pass 3 conflicts with an earlier pass, Pass 3 wins. A clean rewrite that no
 longer sounds like the writer, or that lost a real detail, has failed even if
@@ -292,6 +300,7 @@ structure:
 ## Humanized draft
 Voice: [generic | from FILENAME | matched to pasted sample | author: NAME]
        [append " + stance" when stance mode is on, e.g. "generic + stance"]
+       [append ", low-confidence: REASON" when the voice source is thin]
 Density: [low -> light pass | medium -> standard pass | high -> full pass]
 Text hygiene: [no suspicious characters visible | cleaned: COUNTS AND TYPES |
                not verifiable in this interface]
@@ -358,9 +367,11 @@ Read these on demand, not upfront:
   preserve, LLM idiolects, and the hard stop conditions.
 - `references/voice-matching.md` whenever Step 0 found a voice. How to extract
   and apply a voice, the optional VOICE.md schema, and conflict resolution.
-- `references/text-hygiene.md` during Step 0d and final verification.
-  Suspicious invisible Unicode, load-bearing exceptions, conservative
-  normalization, reporting, and prompt-only scope boundaries.
+- `references/text-hygiene.md` when Step 0d needs it (suspicious characters,
+  a mention of hidden marks, or prose in a file to search) and for the final
+  check after a cleanup. Suspicious invisible Unicode, load-bearing
+  exceptions, the exact codepoint search, conservative normalization,
+  reporting, and prompt-only scope boundaries.
 - `references/examples.md` when you are unsure what good output looks like.
   Five full worked runs: generic de-slop, voice-first, a restraint case,
   stance mode, and text hygiene.

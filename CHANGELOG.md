@@ -9,12 +9,15 @@ to semantic versioning.
 
 ### Changed
 
-- Re-synced the vendored skills to their upstream 1.2.1 releases (humanizer
-  @ 978116a, authenticity-check @ b20c10a), from the 1.1.1 commits vendored
-  in 1.2.0. This adds humanizer's prompt-level text-hygiene preflight
-  (`references/text-hygiene.md`) and authenticity-check's read-only Unicode
-  provenance preflight (`references/provenance-signals.md`) with its
-  `Provenance signals` report section.
+- Re-synced the vendored skills to their latest upstream releases, humanizer
+  1.3.0 (@ a5f8a33) and authenticity-check 1.2.1 (@ b20c10a), from the 1.1.1
+  commits vendored in 1.2.0. This adds humanizer's prompt-level text-hygiene
+  preflight (`references/text-hygiene.md`, with an exact codepoint search
+  since 1.3.0) and authenticity-check's read-only Unicode provenance
+  preflight (`references/provenance-signals.md`) with its
+  `Provenance signals` report section. humanizer 1.3.0 also corrects its
+  worked examples and the shared criteria (`tell-patterns.md`,
+  `voice-matching.md`) that voiceprint vendors into both trees.
 - The output contract now states how those upstream additions fit the single
   pass without adding a stage or a loop. Both authenticity reads carry
   authenticity-check's provenance signals, which are reported and never
@@ -28,8 +31,12 @@ to semantic versioning.
   the pinned Unicode Emoji 17.0 variation-sequence data, and after `#`, `*`,
   or a digit only when U+20E3 follows. Tag characters are preserved only
   inside the three RGI emoji tag sequences. Selectors after other bases and
-  repeated selectors are removed. The Mongolian vowel separator U+180E is
-  preserved between Mongolian letters.
+  repeated selectors are removed, including after emoji that have no
+  variation sequence, such as U+1F600 U+FE0F, which policy 1 kept; those
+  emoji already default to emoji presentation, so rendering is unchanged.
+  The Mongolian vowel separator U+180E is preserved between Mongolian
+  letters. Preservation reasons for presentation selectors now name the
+  pinned variation data instead of an emoji range.
 - `scripts/sync-upstream` vendors every tracked `references/*.md` file at the
   stamped commit instead of a fixed list, reads file bytes from that commit
   rather than the working tree, and warns when the commit is not on a
@@ -44,8 +51,10 @@ to semantic versioning.
   vendored copies as a warning. The `upstream-freshness` workflow's checkout
   action is pinned to a full commit SHA like the validation workflow, and the
   workflow documents how to re-enable it after GitHub's inactivity pause.
-- `SKILL.md` no longer pre-approves `Edit`, which the pass never uses, and its
-  `compatibility` field now states the Python 3.10 requirement.
+- `SKILL.md` no longer pre-approves `Edit`, which the pass never uses. Its
+  frontmatter adds `license: MIT`, lists `allowed-tools` in the
+  space-separated form from the Agent Skills spec (as humanizer 1.3.0 does),
+  and states the Python 3.10 requirement in `compatibility`.
 - Added eval 12 for the provenance-signal and `Next step` interplay.
 
 ### Fixed
@@ -61,14 +70,16 @@ to semantic versioning.
   cleanup result against local copies of the official Unicode files.
 - The Mongolian vowel separator was removed as a hidden control even between
   Mongolian letters, where it selects the separated form of a final vowel.
-- README: the eight supported tools are not the subset both upstream skills
-  share (both also ship Windsurf, Cline, Continue, Zed, and Aider adapters),
-  and the note on vendored frontmatter now matches upstream (humanizer dropped
-  `compatibility`; authenticity-check moved it under `metadata`).
+- README: the eight supported tools were described as the subset both
+  upstream skills share, but the upstreams document more (Devin Desktop,
+  formerly Windsurf; Cline; Continue; Zed; and Aider). The note on vendored
+  frontmatter now matches upstream (humanizer dropped `compatibility`;
+  authenticity-check moved it under `metadata`), and Pi Coder is now called
+  Pi, as upstream renamed it.
 - GitHub had disabled the scheduled `upstream-freshness` workflow after 60
-  days without repository activity, so the vendored copies fell two upstream
-  releases behind unnoticed. The workflow is re-enabled, and every push now
-  reports staleness as well.
+  days without repository activity, so the vendored copies missed every
+  upstream release after 1.1.1 without notice. The workflow is re-enabled,
+  and every push now reports staleness as well.
 
 ### Removed
 

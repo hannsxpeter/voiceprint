@@ -19,18 +19,17 @@ score-only), never a half-empty voiceprint pass.
 
 Read `SKILL.md` at the repo root and follow it exactly. Run three steps in
 order, once each: (1) diagnose the immutable original by reading
-`vendor/authenticity-check/SKILL.md`, carrying out no target score; (2) run
-`python3 scripts/text_hygiene.py clean --stats` once, preferring standard input
-for pasted text, then pass its cleaned working copy to one invocation of
+`vendor/authenticity-check/SKILL.md`, carrying no target score out of it; (2)
+run `python3 scripts/text_hygiene.py clean --stats` once, preferring standard
+input for pasted text, then pass its cleaned working copy to one invocation of
 `vendor/humanizer/SKILL.md` (voice discovery, density pre-check, text-hygiene
 preflight, multi-pass workflow, meaning check); (3) re-diagnose once on the
-after text,
-fresh and cold, for residual reporting only. Emit the exact output contract:
-Before / Authenticity read (before) / After / What changed / Residual / What
-remains is a human's call. Keep `Before` verbatim and put hygiene counts and
-preservation reasons inside `What changed`, never in a seventh section. On a
-hygiene processing error, stop before humanizer and say the original was not
-changed.
+after text, fresh and cold, for residual reporting only. Emit the exact output
+contract: Before / Authenticity read (before) / After / What changed /
+Residual / What remains is a human's call. Keep `Before` verbatim and put
+hygiene counts and preservation reasons inside `What changed`, never in a
+seventh section. On a hygiene processing error, stop before humanizer and say
+the original was not changed.
 
 Hard rule: one pass, never a loop. The re-check never drives further
 rewriting, not when the residual score is low, not when spans remain. One

@@ -2,7 +2,7 @@
 .DS_Store
 Thumbs.db
 
-# Python (only used by optional external validators, never shipped)
+# Python bytecode from the hygiene helper and the test suites
 __pycache__/
 *.pyc
 

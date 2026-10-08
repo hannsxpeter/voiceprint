@@ -14,11 +14,12 @@ description: >-
   the standalone humanizer skill) or a pure score with no rewrite (that is the
   standalone authenticity-check skill); voiceprint is the one-pass union of
   the two, not a replacement for either.
-allowed-tools: Read, Write, Glob, Grep, Bash
+license: MIT
+allowed-tools: Read Write Glob Grep Bash
 compatibility: >-
   Requires Python 3.10 or newer for scripts/text_hygiene.py. Ships adapters
-  for Claude Code, Cursor, Codex, Antigravity, Gemini CLI, Pi Coder,
-  OpenCode, and GitHub Copilot.
+  for Claude Code, Cursor, Codex, Antigravity, Gemini CLI, Pi, OpenCode, and
+  GitHub Copilot.
 metadata:
   version: 1.5.0
 ---

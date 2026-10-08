@@ -5,7 +5,7 @@ draft through one unified prose-authenticity pass. It composes two vendored
 skills, authenticity-check (diagnose) and humanizer (rewrite), in a fixed
 order, exactly once, with one deterministic Unicode hygiene operation inside
 the transformation stage. It is the entry point for any AI coding tool that
-reads `AGENTS.md` (Codex, OpenCode, Antigravity, Pi Coder, and others).
+reads `AGENTS.md` (Codex, OpenCode, Antigravity, Pi, and others).
 
 ## When to apply this skill
 

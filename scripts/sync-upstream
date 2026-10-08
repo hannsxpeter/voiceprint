@@ -168,6 +168,12 @@ HZ_REFS=$(reference_files "$HZ" "$HZ_SHA")
 AC_REFS=$(reference_files "$AC" "$AC_SHA")
 [ -n "$HZ_REFS" ] || die "humanizer @ $HZ_SHORT has no references/*.md files"
 [ -n "$AC_REFS" ] || die "authenticity-check @ $AC_SHORT has no references/*.md files"
+
+# Split the path lists on newlines only and never expand them as globs, so the
+# guard below sees each name exactly as git listed it.
+set -f
+IFS='
+'
 for rel in $HZ_REFS $AC_REFS; do
   case "$rel" in
     *[!A-Za-z0-9._/-]*) die "unsupported character in upstream path: $rel" ;;

@@ -5,6 +5,18 @@ to semantic versioning.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-07
+
+### Changed
+
+- Re-synced the vendored authenticity-check skill to its 1.2.2 release
+  (@ d5de843). Its `SKILL.md` now names pattern 29 "knowledge-cutoff and
+  capability disclaimers", matching the shared catalog voiceprint already
+  vendors from humanizer 1.3.1, so both vendored skills use the same pattern
+  names again. The humanizer tree and the shared criteria are unchanged;
+  authenticity-check's `scoring.md`, `examples.md`, and
+  `provenance-signals.md` changed only their sync stamps.
+
 ## [1.5.0] - 2026-10-07
 
 ### Changed
@@ -326,7 +338,8 @@ First stable release.
   a vendoring sync obligation that the standalone skills do not, so it needs a
   sync tool and a check that the obligation is being met.
 
-[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.2.0...v1.3.0

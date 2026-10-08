@@ -6,6 +6,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 Canonical upstream: the `humanizer` repo, references/tell-patterns.md
   (github.com/hannsxpeter/humanizer).
 Source commit: a5f8a3319871f8796582c42621d9e48f7975da45
+Source blob: fde5d4e8bbddc8786fcced025715bf07ec9d2544
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical

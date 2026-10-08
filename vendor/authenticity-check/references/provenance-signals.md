@@ -6,6 +6,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 Canonical upstream: the `authenticity-check` repo, references/provenance-signals.md
   (github.com/hannsxpeter/authenticity-check).
 Source commit: b20c10a8407e578b76cb552c4b344583dde724bf
+Source blob: 2d7ee3fd7bd501c9ecf164d8722fa3e0a6b00b71
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical

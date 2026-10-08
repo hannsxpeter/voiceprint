@@ -95,16 +95,20 @@ a cleaned working copy. It replaces Unicode space variants with an ordinary
 space and removes soft hyphens, U+200B, invalid or free-floating joiners,
 directional controls, tag characters outside the pinned emoji tag sequences,
 BOM, interlinear annotation controls, invisible operators, the Mongolian
-vowel separator outside Mongolian words, and unsupported variation selectors.
-Other format controls are preserved conservatively and reported with a
-reason. Tabs, line breaks, fullwidth letters, and confusable visible letters
-remain unchanged.
+vowel separator outside Mongolian words, unsupported variation selectors, and
+unassigned default-ignorable code points. Other format controls, and the
+default-ignorable letters and marks that render invisibly but have
+orthographic uses (U+034F, U+115F, U+1160, U+17B4, U+17B5, U+3164, U+FFA0),
+are preserved conservatively and reported with a reason, so every
+default-ignorable code point in the Unicode 17.0 data is at least reported.
+Tabs, line breaks, fullwidth letters, and confusable visible letters remain
+unchanged.
 
 Script joiners are preserved only between letters in the same supported
 script family, and the Mongolian vowel separator only between Mongolian
-letters. Mongolian variation selectors are preserved only after a Mongolian
-base. Emoji preservation uses three tables pinned from the official Unicode
-Emoji 17.0 data:
+letters. Mongolian variation selectors are preserved only directly after a
+Mongolian letter. Emoji preservation uses three tables pinned from the
+official Unicode Emoji 17.0 data:
 
 - **ZWJ pairs.** U+200D is preserved only when its neighboring bases match
   one of 245 pairs taken from the ZWJ sequence data.
@@ -125,15 +129,17 @@ sequence in the pinned data unchanged: 1,400 basic emoji, 12 keycap, 259 flag,
 sequences (keycap bases checked inside their keycap sequence). Policy version
 1, shipped in 1.4.0, removed the selector from 132 of those variation
 sequences, which broke 40 basic emoji, all 12 keycaps, and two ZWJ sequences,
-and it stripped the tag characters from all three tag sequences. To reproduce
-the check against the official files:
+and it stripped the tag characters from all three tag sequences. The same
+check confirms that every default-ignorable code point is detected and every
+unassigned one removed; policy 1 missed 3,776 of the 4,174. To reproduce the
+check against the official files:
 
 ```sh
 DATA=$(mktemp -d)
-for f in emoji/emoji-sequences.txt emoji/emoji-zwj-sequences.txt ucd/emoji/emoji-variation-sequences.txt; do
+for f in emoji/emoji-sequences.txt emoji/emoji-zwj-sequences.txt ucd/emoji/emoji-variation-sequences.txt ucd/DerivedCoreProperties.txt; do
   curl -fsSL -o "$DATA/$(basename "$f")" "https://www.unicode.org/Public/17.0.0/$f"
 done
-VOICEPRINT_UNICODE_DATA_DIR="$DATA" python3 -m unittest -v tests.test_text_hygiene.UnicodeEmojiDataTests
+VOICEPRINT_UNICODE_DATA_DIR="$DATA" python3 -m unittest -v tests.test_text_hygiene.UnicodeDataTests
 ```
 
 The helper is dependency-free, offline, and never writes a source file in
@@ -208,6 +214,12 @@ Every adapter points the agent at the same `SKILL.md`, deterministic hygiene
 helper, and vendored skills under `vendor/`, so the one-pass behavior is
 identical across tools.
 
+Because the pass reads untrusted text, `SKILL.md` pre-approves only
+read-only tools. In Claude Code that means a permission prompt before the
+hygiene helper runs, and before a temporary input file is written when the
+host offers no way to pass standard input. The prompt is deliberate: pasted
+text never reaches a shell command or heredoc.
+
 voiceprint ships and documents adapters for the eight tools above (Pi was
 formerly listed as Pi Coder). The upstream skills also document Devin
 Desktop (formerly Windsurf), Cline, Continue, Zed, and Aider. Several of
@@ -278,13 +290,16 @@ script. It is never hand-copied.
    scripts/sync-upstream /path/to/humanizer /path/to/authenticity-check
    ```
 
-3. The script refuses to run if either upstream working tree has uncommitted
-   tracked changes. It vendors each skill's `SKILL.md` and every tracked
-   `references/*.md` file, reading the bytes from the upstream HEAD commit so
-   the stamped commit always reproduces them. It prepends the sync header
-   (naming the true canonical upstream per file: the shared criteria always
-   point at humanizer even inside the authenticity-check tree), warns when
-   that commit is not on a remote-tracking branch, and prints a summary.
+3. The script refuses to run outside a voiceprint checkout, or if either
+   upstream working tree has uncommitted tracked changes or cannot report its
+   status. It vendors each skill's `SKILL.md` and every tracked
+   `references/*.md` file (regular files directly under `references/` only),
+   reading the bytes from the upstream HEAD commit. Each file gets the sync
+   header, which names the true canonical upstream (the shared criteria always
+   point at humanizer even inside the authenticity-check tree), the source
+   commit, and the upstream blob id of the body. The new tree is built beside
+   `vendor/` and swapped in only after every file succeeded. The script warns
+   when the commit is not on a remote-tracking branch and prints a summary.
 4. Verify and commit the updated `vendor/`:
 
    ```sh
@@ -294,8 +309,10 @@ script. It is never hand-copied.
 
 `scripts/check-vendor-headers` runs inside `scripts/check` and therefore in CI
 (`.github/workflows/vendor-sync-check.yml`). It fails the build if any file
-under `vendor/` is missing a valid sync header, or if a vendored `SKILL.md`
-names a reference file that was not vendored. Re-syncing is an obligation,
+under `vendor/` is missing a valid sync header, if a vendored body is not
+exactly the upstream blob its header names (an edit made here instead of
+upstream), or if a vendored `SKILL.md` names a reference file that was not
+vendored. Re-syncing is an obligation,
 not an option: when the upstream criteria change, the vendored copies must be
 re-pulled or the product silently disagrees with the skills it advertises.
 `scripts/check-upstream-freshness` compares each vendored skill's stamped
@@ -313,7 +330,8 @@ release after 1.1.1 until 1.5.0. If the Actions tab shows
 `scripts/check` runs everything CI runs: the hygiene and repository test
 suites (exact hygiene fixtures, shell syntax, eval JSON, version consistency
 across `SKILL.md`, this README, and `CHANGELOG.md`, adapter routing, pinned
-workflow actions, and the dash policy), then `scripts/check-vendor-headers`.
+workflow actions and credentials, the read-only tool grant, the dash policy,
+and the vendored-content check itself), then `scripts/check-vendor-headers`.
 CI runs it on Python 3.10, the documented minimum, and 3.14.
 
 ## Scope
@@ -341,7 +359,7 @@ vendor/authenticity-check/        synced copy of the authenticity-check skill
 scripts/text_hygiene.py           deterministic Unicode inspection and cleanup
 scripts/check                     every repository check, exactly as CI runs it
 scripts/sync-upstream             re-pulls vendored files and stamps headers
-scripts/check-vendor-headers      validates vendored headers and referenced files
+scripts/check-vendor-headers      validates vendored headers, bodies, and referenced files
 scripts/check-upstream-freshness  flags when a vendored skill is behind its upstream
 tests/test_text_hygiene.py        exact API and CLI fixtures for the hygiene policy
 tests/test_repository.py          consistency checks for versions, adapters, evals, scripts, and CI

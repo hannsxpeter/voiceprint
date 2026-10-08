@@ -14,3 +14,6 @@ __pycache__/
 
 # Local agent worktrees and scratch (not part of the skill)
 .claude/
+
+# Staging directories scripts/sync-upstream leaves only if it is killed
+.vendor-sync.*/

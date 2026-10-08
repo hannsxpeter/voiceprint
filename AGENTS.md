@@ -33,10 +33,12 @@ shortcut. In brief, run these three steps in order, once each:
    out of it.
 2. **Clean and rewrite once.** Run
    `python3 scripts/text_hygiene.py clean --stats` once at the start of Step 2,
-   preferring standard input for pasted text, then pass its cleaned working
-   copy to one invocation of `vendor/humanizer/SKILL.md`. Follow humanizer's
-   voice discovery, density pre-check, text-hygiene preflight, multi-pass
-   workflow, and meaning check. This is the after text.
+   then pass its cleaned working copy to one invocation of
+   `vendor/humanizer/SKILL.md`. Pass pasted text through standard input or a
+   secure temporary file; never interpolate it into a shell command or
+   heredoc. Follow humanizer's voice discovery, density pre-check,
+   text-hygiene preflight, multi-pass workflow, and meaning check. This is
+   the after text.
 3. **Re-diagnose once, for residual only.** Read
    `vendor/authenticity-check/SKILL.md` again and run it on the after text as
    a fresh, cold diagnosis. Report the residual. Do not act on it.

@@ -20,8 +20,10 @@
 #
 # Every tracked references/*.md file at the stamped commit is vendored, so a
 # reference file added upstream can never be silently left behind. File bytes
-# come from the stamped commit itself, not the working tree, so the header
-# always reproduces exactly what was vendored.
+# come from the stamped commit itself, not the working tree, and each header
+# records the upstream blob id, so scripts/check-vendor-headers can prove the
+# vendored body is exactly that blob. The new tree is built in a staging
+# directory and swapped in only after every file was vendored.
 #
 # A fix never lands here. It lands upstream in the canonical repo, is
 # committed there, and is then re-synced down with this script. This script
@@ -41,6 +43,16 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 PARENT=$(dirname -- "$ROOT")
 
+die() {
+  printf 'sync-upstream: %s\n' "$1" >&2
+  exit 1
+}
+
+# This script deletes and rebuilds $ROOT/vendor, and $0 may be a symlink placed
+# somewhere else, so it refuses to run anywhere but a voiceprint checkout.
+grep -qx 'name: voiceprint' "$ROOT/SKILL.md" 2>/dev/null \
+  || die "refusing to run: $ROOT is not the voiceprint repository; run scripts/sync-upstream from a voiceprint checkout"
+
 HZ="${1:-${HUMANIZER_REPO:-$PARENT/humanizer}}"
 AC="${2:-${AUTHENTICITY_CHECK_REPO:-$PARENT/authenticity-check}}"
 SYNC_DATE="${SYNC_DATE:-$(date +%F)}"
@@ -48,11 +60,6 @@ SYNC_DATE="${SYNC_DATE:-$(date +%F)}"
 # Shared detection criteria: canonical in humanizer, re-vendored into the
 # authenticity-check tree. scripts/check-vendor-headers names the same files.
 SHARED_CRITERIA='tell-patterns.md do-not-flag.md voice-matching.md'
-
-die() {
-  printf 'sync-upstream: %s\n' "$1" >&2
-  exit 1
-}
 
 # Verify an upstream is a clean git working tree, then echo its full SHA.
 verify_clean_repo() {
@@ -65,10 +72,12 @@ verify_clean_repo() {
   # Only tracked changes (modified/staged/deleted) matter: they are usually an
   # upstream fix that has not been committed yet. Untracked local scratch
   # (e.g. an agent .claude/ worktree) is never vendored, so -uno keeps the
-  # guard precise instead of blocking on unrelated noise.
-  if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then
-    die "$label working tree has uncommitted tracked changes ($repo). Commit or stash upstream first; refusing to vendor unreproducible bytes."
-  fi
+  # guard precise instead of blocking on unrelated noise. A failing status
+  # must stop the sync rather than read as "clean".
+  changes=$(git -C "$repo" status --porcelain --untracked-files=no) \
+    || die "$label: git status failed in $repo"
+  [ -z "$changes" ] \
+    || die "$label working tree has uncommitted tracked changes ($repo). Commit or stash upstream first; refusing to vendor unreproducible bytes."
   git -C "$repo" rev-parse HEAD
 }
 
@@ -89,7 +98,7 @@ AC_SHORT=$(git -C "$AC" rev-parse --short "$AC_SHA")
 warn_if_unpublished "$HZ" "humanizer" "$HZ_SHA"
 warn_if_unpublished "$AC" "authenticity-check" "$AC_SHA"
 
-# emit_header UP_NAME UP_PATH FULL_SHA SHORT_SHA SHARED(0|1)
+# emit_header UP_NAME UP_PATH FULL_SHA SHORT_SHA SHARED(0|1) BLOB_SHA
 # Prints the voiceprint vendor header. All literal text is in single-quoted
 # printf arguments, so backticks and $ are never interpreted by the shell.
 emit_header() {
@@ -98,6 +107,7 @@ emit_header() {
   full_sha="$3"
   short_sha="$4"
   shared="$5"
+  blob_sha="$6"
 
   printf '%s\n' '<!--'
   printf '%s\n' '============================================================================='
@@ -107,6 +117,7 @@ emit_header() {
   printf 'Canonical upstream: the `%s` repo, %s\n' "$up_name" "$up_path"
   printf '  (github.com/hannsxpeter/%s).\n' "$up_name"
   printf 'Source commit: %s\n' "$full_sha"
+  printf 'Source blob: %s\n' "$blob_sha"
   printf '%s\n' ''
   printf '%s\n' 'This is a verbatim synced copy vendored into the `voiceprint` repo, a'
   printf '%s\n' 'thin orchestrator that runs this skill but does not own it. The canonical'
@@ -131,6 +142,7 @@ emit_header() {
 }
 
 # vendor_file SRC_REPO SRC_REL DEST_REL UP_NAME FULL_SHA SHORT_SHA SHARED(0|1)
+# Writes into the staging tree; DEST_REL is the final path under vendor/.
 vendor_file() {
   src_repo="$1"
   src_rel="$2"
@@ -140,14 +152,22 @@ vendor_file() {
   short_sha="$6"
   shared="$7"
 
-  dest="$ROOT/$dest_rel"
-  git -C "$src_repo" cat-file -e "$full_sha:$src_rel" 2>/dev/null \
-    || die "upstream file missing: $up_name @ $short_sha: $src_rel"
+  # Only a regular file may be vendored. A symlink, submodule, or directory
+  # entry would vendor something other than the upstream file's bytes.
+  entry=$(git -C "$src_repo" ls-tree "$full_sha" -- "$src_rel") \
+    || die "could not read $up_name @ $short_sha: $src_rel"
+  case "$entry" in
+    "100644 blob "*) ;;
+    "") die "upstream file missing: $up_name @ $short_sha: $src_rel" ;;
+    *) die "upstream path is not a regular file: $up_name @ $short_sha: $src_rel" ;;
+  esac
+  blob_sha=$(git -C "$src_repo" rev-parse "$full_sha:$src_rel")
 
+  dest="$STAGE/${dest_rel#vendor/}"
   mkdir -p "$(dirname -- "$dest")"
   {
-    emit_header "$up_name" "$src_rel" "$full_sha" "$short_sha" "$shared"
-    git -C "$src_repo" show "$full_sha:$src_rel"
+    emit_header "$up_name" "$src_rel" "$full_sha" "$short_sha" "$shared" "$blob_sha"
+    git -C "$src_repo" cat-file blob "$blob_sha"
   } > "$dest"
   printf '  vendored %s  <-  %s @ %s\n' "$dest_rel" "$up_name" "$short_sha"
 }
@@ -170,13 +190,17 @@ AC_REFS=$(reference_files "$AC" "$AC_SHA")
 [ -n "$AC_REFS" ] || die "authenticity-check @ $AC_SHORT has no references/*.md files"
 
 # Split the path lists on newlines only and never expand them as globs, so the
-# guard below sees each name exactly as git listed it.
+# guard below sees each name exactly as git listed it. A vendored reference
+# must be a single, plainly named file directly under references/, which also
+# keeps every destination inside vendor/.
 set -f
 IFS='
 '
 for rel in $HZ_REFS $AC_REFS; do
-  case "$rel" in
-    *[!A-Za-z0-9._/-]*) die "unsupported character in upstream path: $rel" ;;
+  name=${rel#references/}
+  case "$name" in
+    "$rel" | "" | */* | .* | -* | *[!A-Za-z0-9._-]*)
+      die "unsupported upstream path: $rel" ;;
   esac
 done
 
@@ -184,8 +208,13 @@ printf 'sync-upstream: humanizer=%s @ %s\n' "$HZ" "$HZ_SHORT"
 printf 'sync-upstream: authenticity-check=%s @ %s\n' "$AC" "$AC_SHORT"
 printf 'sync-upstream: stamp date=%s\n\n' "$SYNC_DATE"
 
-# Clear and rebuild the vendored tree so a removed-upstream file cannot linger.
-rm -rf "$ROOT/vendor"
+# Build the new tree beside vendor/ and swap it in only once every file was
+# vendored, so a failure part way through never leaves vendor/ half rebuilt.
+# A removed-upstream file cannot linger because the tree is built from empty.
+STAGE="$ROOT/.vendor-sync.$$"
+mkdir "$STAGE" || die "could not create staging directory: $STAGE"
+trap 'rm -rf "$STAGE"' EXIT
+trap 'exit 1' HUP INT TERM
 
 # --- humanizer skill (canonical: humanizer) ---------------------------------
 vendor_file "$HZ" "SKILL.md" "vendor/humanizer/SKILL.md" "humanizer" "$HZ_SHA" "$HZ_SHORT" 0
@@ -205,4 +234,15 @@ for rel in $AC_REFS; do
   fi
 done
 
-printf '\nsync-upstream: done. Now run scripts/check-vendor-headers and commit vendor/.\n'
+if [ -d "$ROOT/vendor" ]; then
+  mv "$ROOT/vendor" "$STAGE.old"
+fi
+if ! mv "$STAGE" "$ROOT/vendor"; then
+  if [ -d "$STAGE.old" ]; then
+    mv "$STAGE.old" "$ROOT/vendor"
+  fi
+  die "could not move the new tree into place; vendor/ is unchanged"
+fi
+rm -rf "$STAGE.old"
+
+printf '\nsync-upstream: done. Now run scripts/check and commit vendor/.\n'

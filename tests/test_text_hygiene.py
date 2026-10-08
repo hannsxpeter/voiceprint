@@ -161,6 +161,40 @@ class TextHygieneApiTests(unittest.TestCase):
         self.assertEqual(finding(manifest, "U+180E", "remove")["count"], 2)
         self.assertEqual(manifest["summary"]["preserved"], 0)
 
+    def test_removes_repeated_mongolian_variation_selectors(self):
+        source = "\u1820\u180b\u180c\u180d"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "\u1820\u180b")
+        self.assertEqual(finding(manifest, "U+180B", "preserve")["offsets"], [1])
+        self.assertEqual(manifest["summary"]["removed"], 2)
+
+    def test_removes_unassigned_default_ignorable_code_points(self):
+        source = (
+            "a\u2065b\U000e0000c\U000e0002d\U000e0080e"
+            "\ufff0f\U000e0fffg"
+        )
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "abcdefg")
+        self.assertEqual(manifest["summary"]["removed"], 6)
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_reports_invisible_default_ignorable_letters_and_marks(self):
+        source = "a\u034fb\u115fc\u1160d\u17b4e\u17b5f\u3164g\uffa0h"
+
+        cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, source)
+        self.assertEqual(manifest["summary"]["preserved"], 7)
+        self.assertEqual(manifest["summary"]["actionable"], 0)
+        self.assertEqual(
+            {item["reason"] for item in manifest["findings"]},
+            {"invisible default-ignorable character preserved conservatively"},
+        )
+
     def test_removes_supplementary_selector_after_arabic(self):
         source = "\u0627\U000e0100"
 
@@ -712,7 +746,7 @@ def code_point_sequence(field):
     UNICODE_DATA_DIR,
     "set VOICEPRINT_UNICODE_DATA_DIR to run the Unicode data check",
 )
-class UnicodeEmojiDataTests(unittest.TestCase):
+class UnicodeDataTests(unittest.TestCase):
     """Check the pinned tables and cleanup against the official Unicode files."""
 
     DATA_FILES = (
@@ -729,6 +763,14 @@ class UnicodeEmojiDataTests(unittest.TestCase):
                     f"# Version: {text_hygiene.EMOJI_ZWJ_VERSION}\n",
                     text,
                 )
+        properties = (Path(UNICODE_DATA_DIR) / "DerivedCoreProperties.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertTrue(
+            properties.startswith(
+                f"# DerivedCoreProperties-{text_hygiene.EMOJI_ZWJ_VERSION}.0.txt"
+            )
+        )
 
     def test_pinned_zwj_pairs_match_the_zwj_sequence_data(self):
         skipped = {0xFE0E, 0xFE0F, *range(0x1F3FB, 0x1F400)}
@@ -797,6 +839,27 @@ class UnicodeEmojiDataTests(unittest.TestCase):
                 changed.append(hex_sequence(sequence))
 
         self.assertEqual(changed, [])
+
+    def test_every_default_ignorable_code_point_is_detected(self):
+        undetected = []
+        kept_unassigned = []
+        path = Path(UNICODE_DATA_DIR) / "DerivedCoreProperties.txt"
+        for line in path.read_text(encoding="utf-8").splitlines():
+            body, _, comment = line.partition("#")
+            fields = [field.strip() for field in body.split(";")]
+            if fields[-1] != "Default_Ignorable_Code_Point":
+                continue
+            start, _, end = fields[0].partition("..")
+            unassigned = comment.split()[0] == "Cn"
+            for code_point in range(int(start, 16), int(end or start, 16) + 1):
+                cleaned, manifest = clean_text("a" + chr(code_point) + "b")
+                if manifest["summary"]["detected"] != 1:
+                    undetected.append(f"U+{code_point:04X}")
+                if unassigned and cleaned != "ab":
+                    kept_unassigned.append(f"U+{code_point:04X}")
+
+        self.assertEqual(undetected, [])
+        self.assertEqual(kept_unassigned, [])
 
 
 if __name__ == "__main__":

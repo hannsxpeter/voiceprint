@@ -22,10 +22,11 @@ Run three steps in order, once each:
    immutable original. This is the before read. Carry no target score out of
    it.
 2. Clean and rewrite: run `python3 scripts/text_hygiene.py clean --stats` once,
-   preferring standard input for pasted text, then pass its cleaned working
-   copy to one invocation of `vendor/humanizer/SKILL.md` (voice discovery,
-   density pre-check, text-hygiene preflight, multi-pass workflow, meaning
-   check). This is the after text.
+   then pass its cleaned working copy to one invocation of
+   `vendor/humanizer/SKILL.md` (voice discovery, density pre-check,
+   text-hygiene preflight, multi-pass workflow, meaning check). Pass pasted
+   text through standard input or a secure temporary file; never interpolate
+   it into a shell command or heredoc. This is the after text.
 3. Re-diagnose: read `vendor/authenticity-check/SKILL.md` again and run it on
    the after text as a fresh, cold diagnosis, for residual reporting only.
 

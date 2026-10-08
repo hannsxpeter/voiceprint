@@ -6,6 +6,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 Canonical upstream: the `humanizer` repo, references/do-not-flag.md
   (github.com/hannsxpeter/humanizer).
 Source commit: a5f8a3319871f8796582c42621d9e48f7975da45
+Source blob: a95c4549e2fc40c9b05346a5baeb9c561fcc12b4
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical

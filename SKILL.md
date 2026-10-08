@@ -15,7 +15,7 @@ description: >-
   standalone authenticity-check skill); voiceprint is the one-pass union of
   the two, not a replacement for either.
 license: MIT
-allowed-tools: Read Write Glob Grep Bash
+allowed-tools: Read Glob Grep
 compatibility: >-
   Requires Python 3.10 or newer for scripts/text_hygiene.py. Ships adapters
   for Claude Code, Cursor, Codex, Antigravity, Gemini CLI, Pi, OpenCode, and
@@ -99,8 +99,10 @@ At the start of this step, run the immutable original through
 `python3 scripts/text_hygiene.py clean --stats` exactly once, resolving the
 script relative to this `SKILL.md`. Python 3.10 or newer is required. For
 pasted text, prefer the command's standard input and pass the original bytes
-through the host process-input facility. Do not interpolate pasted text into a
-shell command. A user-provided path remains a read-only source.
+through the host process-input facility. Never interpolate pasted text into a
+shell command, including a heredoc: a line in the draft that matches the
+delimiter would end it and run the rest of the draft as commands. A
+user-provided path remains a read-only source.
 
 If the host cannot supply standard input and a temporary file is unavoidable,
 use its secure-temp facility, require owner-only permissions, and guarantee
@@ -193,9 +195,10 @@ a rewrite and a fresh read, which inside the residual would invite exactly the
 loop this skill forbids. The "After" text above is the artifact. If the user
 gave a file path and wants it persisted, offer that once, after the full
 contract is delivered, never as a silent in-place rewrite. The pass itself
-never edits files. This skill lists `Bash` to run the hygiene helper and
-`Write` for the secure temporary file a host without a standard-input
-facility needs.
+never edits files. Because it reads untrusted text, this skill pre-approves
+only read-only tools: running the hygiene helper, and writing a temporary
+input file when the host has no standard-input facility, go through the
+host's normal permission prompt.
 
 Inside `What changed`, identify hygiene findings only by their observable
 code point, Unicode name, action, count, and up to 10 zero-based code-point

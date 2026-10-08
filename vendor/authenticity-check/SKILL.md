@@ -6,6 +6,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 Canonical upstream: the `authenticity-check` repo, SKILL.md
   (github.com/hannsxpeter/authenticity-check).
 Source commit: b20c10a8407e578b76cb552c4b344583dde724bf
+Source blob: 10417280aef2cbee66aaa140d0d6e84f95f8de80
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical

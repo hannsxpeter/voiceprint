@@ -27,35 +27,45 @@ to semantic versioning.
   the residual, authenticity-check's would have sent the user back to a
   rewrite. Every adapter carries the same rule.
 - Text hygiene policy version 2 (manifests report `"policy_version": 2`):
-  U+FE0E and U+FE0F are preserved only directly after one of the 371 bases in
-  the pinned Unicode Emoji 17.0 variation-sequence data, and after `#`, `*`,
-  or a digit only when U+20E3 follows. Tag characters are preserved only
-  inside the three RGI emoji tag sequences. Selectors after other bases and
-  repeated selectors are removed, including after emoji that have no
-  variation sequence, such as U+1F600 U+FE0F, which policy 1 kept; those
-  emoji already default to emoji presentation, so rendering is unchanged.
-  The Mongolian vowel separator U+180E is preserved between Mongolian
-  letters. Preservation reasons for presentation selectors now name the
-  pinned variation data instead of an emoji range.
+  - U+FE0E and U+FE0F are preserved only directly after one of the 371 bases
+    in the pinned Unicode Emoji 17.0 variation-sequence data, and after `#`,
+    `*`, or a digit only when U+20E3 follows. Selectors after other bases and
+    repeated selectors are removed, including after emoji that have no
+    variation sequence, such as U+1F600 U+FE0F, which policy 1 kept; those
+    emoji already default to emoji presentation, so rendering is unchanged.
+    Preservation reasons for these selectors now name the pinned variation
+    data instead of an emoji range.
+  - Tag characters are preserved only inside the three RGI emoji tag
+    sequences.
+  - Mongolian variation selectors are preserved only directly after a
+    Mongolian letter, and the Mongolian vowel separator U+180E only between
+    Mongolian letters.
+  - Unassigned default-ignorable code points are removed. The seven
+    default-ignorable letters and marks that render invisibly but have
+    orthographic uses (U+034F, U+115F, U+1160, U+17B4, U+17B5, U+3164,
+    U+FFA0) are preserved and reported, so every default-ignorable code point
+    in the Unicode 17.0 data is at least reported.
 - `scripts/sync-upstream` vendors every tracked `references/*.md` file at the
   stamped commit instead of a fixed list, reads file bytes from that commit
-  rather than the working tree, and warns when the commit is not on a
-  remote-tracking branch. `scripts/check-vendor-headers` fails when a
-  vendored `SKILL.md` names a reference file that was not vendored. The fixed
-  list would have silently skipped both reference files the upstreams added.
+  rather than the working tree, stamps each header with the upstream blob id,
+  and warns when the commit is not on a remote-tracking branch.
+  `scripts/check-vendor-headers` fails when a vendored `SKILL.md` names a
+  reference file that was not vendored. The fixed list would have silently
+  skipped both reference files the upstreams added.
 - One entry point, `scripts/check`, runs every repository check, and CI runs
   it on Python 3.10 (the documented minimum) and 3.14. The new
   `tests/test_repository.py` covers frontmatter, version consistency, adapter
-  routing, eval structure, shell syntax, workflow pinning, and the dash
-  policy across every tracked file outside `vendor/`. Pushes report stale
+  rules, the `SKILL.md` contract, eval structure, shell syntax, workflow
+  pinning and credentials, the dash policy across every tracked file outside
+  `vendor/`, and `scripts/check-vendor-headers` itself. Pushes report stale
   vendored copies as a warning. The `upstream-freshness` workflow's checkout
   action is pinned to a full commit SHA like the validation workflow, and the
   workflow documents how to re-enable it after GitHub's inactivity pause.
-- `SKILL.md` no longer pre-approves `Edit`, which the pass never uses. Its
-  frontmatter adds `license: MIT`, lists `allowed-tools` in the
+- `SKILL.md` frontmatter adds `license: MIT`, lists `allowed-tools` in the
   space-separated form from the Agent Skills spec (as humanizer 1.3.0 does),
   and states the Python 3.10 requirement in `compatibility`.
-- Added eval 12 for the provenance-signal and `Next step` interplay.
+- Added eval 12 (provenance signals and `Next step`) and eval 13 (a draft
+  that tries to close a heredoc).
 
 ### Fixed
 
@@ -68,6 +78,12 @@ to semantic versioning.
   sequence passes unchanged. An opt-in test class
   (`VOICEPRINT_UNICODE_DATA_DIR`) now checks the pinned tables and the
   cleanup result against local copies of the official Unicode files.
+- Policy 1 never reported 3,776 of the 4,174 default-ignorable code points,
+  among them U+034F and the Hangul fillers. U+2065 and the reserved code
+  points of the tag block were listed for removal, but the check only ran
+  for assigned format characters, so they were never removed.
+- Any number of Mongolian variation selectors after one Mongolian letter
+  were all kept, an unbounded hidden channel.
 - The Mongolian vowel separator was removed as a hidden control even between
   Mongolian letters, where it selects the separated form of a final vowel.
 - README: the eight supported tools were described as the subset both
@@ -80,6 +96,27 @@ to semantic versioning.
   days without repository activity, so the vendored copies missed every
   upstream release after 1.1.1 without notice. The workflow is re-enabled,
   and every push now reports staleness as well.
+
+### Security
+
+- `SKILL.md` pre-approves only read-only tools (`Read Glob Grep`). It used to
+  pre-approve `Bash`, `Write`, and `Edit` for the turn that runs the pass,
+  which reads untrusted text, so injected instructions could run commands or
+  write files without a prompt. `SKILL.md` and every adapter now forbid
+  passing pasted text through a shell command or heredoc, where a draft line
+  matching the delimiter would run whatever follows it (eval 13).
+- `scripts/sync-upstream` refuses to run outside a voiceprint checkout, fails
+  closed when upstream `git status` fails, vendors only regular files
+  directly under `references/`, and builds the new tree beside `vendor/`
+  before swapping it in. A crafted upstream or a symlinked invocation can no
+  longer write outside `vendor/`, delete another `vendor/` directory, or
+  leave `vendor/` half rebuilt.
+- `scripts/check-vendor-headers` verifies each vendored body against the
+  upstream blob id stamped in its header, so an edit made here instead of
+  upstream fails CI. `.gitattributes` keeps git from converting line endings
+  in `vendor/`.
+- CI checkout no longer persists credentials, and the freshness warning step
+  runs on pushes only, so code from a pull request cannot read the token.
 
 ### Removed
 

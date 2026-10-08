@@ -6,6 +6,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 Canonical upstream: the `humanizer` repo, references/text-hygiene.md
   (github.com/hannsxpeter/humanizer).
 Source commit: a5f8a3319871f8796582c42621d9e48f7975da45
+Source blob: 61c52033e2478ad685e6e8c7b44ce89bd9bcad8a
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical

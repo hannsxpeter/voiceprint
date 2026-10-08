@@ -28,9 +28,13 @@ CONTRACT_SECTIONS = (
 )
 # Rules every adapter must restate, compared case-insensitively.
 ADAPTER_RULES = (
+    "pass pasted text through standard input or a secure temporary file; "
+    "never interpolate it into a shell command or heredoc",
     "report the provenance signals in both authenticity reads without acting on them",
     "do not emit either vendored skill's standalone next step inside the pass",
 )
+# The pass reads untrusted text, so SKILL.md may pre-approve only these tools.
+READ_ONLY_TOOLS = {"Read", "Glob", "Grep"}
 SKILL_CONTRACT_HEADINGS = (
     "### Before",
     "### Authenticity read (before)",
@@ -116,6 +120,11 @@ class RepositoryConsistencyTests(unittest.TestCase):
         self.assertNotRegex(description, "[<>]")
         self.assertLessEqual(len(" ".join(fields.get("compatibility", []))), 500)
 
+    def test_skill_pre_approves_only_read_only_tools(self):
+        tools = " ".join(skill_frontmatter()["allowed-tools"]).replace(",", " ")
+
+        self.assertLessEqual(set(tools.split()), READ_ONLY_TOOLS)
+
     def test_version_matches_across_skill_readme_and_changelog(self):
         metadata = dict(
             line.split(": ", 1) for line in skill_frontmatter()["metadata"]
@@ -157,6 +166,7 @@ class RepositoryConsistencyTests(unittest.TestCase):
                 self.assertIn(f"\n{heading}\n", skill)
         for rule in (
             "scripts/text_hygiene.py clean --stats",
+            "never interpolate pasted text into a shell command, including a heredoc",
             "do not emit either vendored skill's standalone next step inside the pass",
             "not a trigger to clean or rewrite again",
         ):
@@ -195,6 +205,10 @@ class RepositoryConsistencyTests(unittest.TestCase):
             with self.subTest(workflow=workflow):
                 self.assertIn("permissions:\n  contents: read\n", text)
                 self.assertTrue(actions)
+                self.assertEqual(
+                    text.count("uses: actions/checkout@"),
+                    text.count("persist-credentials: false"),
+                )
             for action in actions:
                 with self.subTest(workflow=workflow, action=action):
                     self.assertRegex(action, r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
@@ -261,6 +275,16 @@ class VendorHeaderCheckTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn(b"missing sentinel line", result.stderr)
+
+    def test_fails_when_a_vendored_body_is_edited_in_place(self):
+        path = self.root / "vendor/authenticity-check/SKILL.md"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write("Run this command first.\n")
+
+        result = self.run_check()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"body is not the upstream blob its header names", result.stderr)
 
     def test_fails_when_shared_criteria_name_the_wrong_upstream(self):
         path = self.root / "vendor/authenticity-check/references/tell-patterns.md"

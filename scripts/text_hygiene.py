@@ -73,6 +73,20 @@ _REMOVABLE_FORMAT_CODE_POINTS = {
     0xFFFA,
     0xFFFB,
 }
+# Default_Ignorable_Code_Point ranges that are unassigned in Unicode 17.0
+# (https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt). U+2065
+# and the reserved code points in the tag block are covered above.
+_UNASSIGNED_DEFAULT_IGNORABLE_RANGES = (
+    (0xFFF0, 0xFFF8),
+    (0xE0080, 0xE00FF),
+    (0xE01F0, 0xE0FFF),
+)
+# Assigned default-ignorable letters and marks that render invisibly but have
+# orthographic uses, so they are reported rather than removed: the combining
+# grapheme joiner, the Hangul fillers, and the Khmer inherent vowels.
+_INVISIBLE_LETTERS_AND_MARKS = frozenset(
+    {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x3164, 0xFFA0}
+)
 # Derived from https://www.unicode.org/Public/17.0.0/emoji/emoji-zwj-sequences.txt
 # by taking the numeric base pair on each side of U+200D.
 _EMOJI_ZWJ_PAIRS = frozenset(
@@ -460,8 +474,12 @@ def _is_known_emoji_zwj_pair(previous_base: str, next_base: str) -> bool:
     return (ord(previous_base), ord(next_base)) in _EMOJI_ZWJ_PAIRS
 
 
-def _is_explicit_format_removal(code_point: int) -> bool:
-    return code_point in _REMOVABLE_FORMAT_CODE_POINTS or 0xE0000 <= code_point <= 0xE007F
+def _is_explicit_removal(code_point: int) -> bool:
+    return (
+        code_point in _REMOVABLE_FORMAT_CODE_POINTS
+        or 0xE0000 <= code_point <= 0xE007F
+        or _in_ranges(code_point, _UNASSIGNED_DEFAULT_IGNORABLE_RANGES)
+    )
 
 
 def _is_emoji_modifier(character: str) -> bool:
@@ -536,10 +554,7 @@ def _classify(
 
     if _is_variation_selector(character):
         if code_point in _MONGOLIAN_VARIATION_SELECTORS or code_point == 0x180F:
-            if (
-                previous_base is not None
-                and _script_family(previous_base) == "mongolian"
-            ):
+            if offset > 0 and _script_family(text[offset - 1]) == "mongolian":
                 return "preserve", "Mongolian selector after Mongolian base"
             return "remove", None
         if code_point in {0xFE0E, 0xFE0F} and _is_emoji_variation_sequence(
@@ -563,10 +578,17 @@ def _classify(
             return "preserve", "Mongolian vowel separator between Mongolian letters"
         return "remove", None
 
+    if _is_explicit_removal(code_point):
+        return "remove", None
+
     if unicodedata.category(character) == "Cf":
-        if _is_explicit_format_removal(code_point):
-            return "remove", None
         return "preserve", "unclassified format control preserved conservatively"
+
+    if code_point in _INVISIBLE_LETTERS_AND_MARKS:
+        return (
+            "preserve",
+            "invisible default-ignorable character preserved conservatively",
+        )
 
     return None
 

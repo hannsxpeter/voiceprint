@@ -169,9 +169,11 @@ _DEFAULT_BIDI_RANGES = (
 # such long runs without letters are rare in prose, and keeping their marks
 # unjudged would leave room to hide data.
 _MARK_WINDOW = 64
-# How many characters judging may examine in one text. A 4 MiB document with
-# 240,000 marks needs about half of it. Past this, marks not yet judged are
-# removed, which bounds the time adversarial input can take.
+# How many characters judging may examine in one text. 4 MiB of short mixed
+# Arabic, Hebrew, and English paragraphs with 227,000 marks needed up to three
+# quarters of it in testing. Once it runs out, the paragraph being judged
+# keeps no marks unless all of them have current verdicts, and later
+# paragraphs keep none, which bounds the time adversarial input can take.
 _MARK_BUDGET = 4_000_000
 # Judging repeats while a pass removes marks, up to this many passes.
 _MARK_PASSES = 8

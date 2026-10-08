@@ -163,18 +163,19 @@ nothing (at most 8 passes). Only the first mark of a run can stay, and a mark
 is removed when it sits between a letter and its combining mark, more than
 64 characters from the nearest letter, or where the text to judge would
 span more than 4,096 characters. To bound adversarial input, judging
-examines at most 4,000,000 characters per text; when that runs out, the
-paragraph being judged and every later one keep none of their marks. 4 MiB
-documents with 240,000 marks used
-between a fifth and a half of the budget in testing, and adversarial 4 MiB
-inputs take up to about three and a half times as long as policy 2 and stay
-under 230 MB. Embeddings,
-overrides, and isolates (U+202A to U+202E and U+2066 to U+2069) are always
-removed: they can reorder whole spans, which is how Trojan Source attacks
-make text display in a different order from the one it is stored in. A kept
-mark still reorders text, since that is its job, but only where the text
-around it shows the change. These rules are policy version 3; version 2
-normalized every space variant and removed every directional mark.
+examines at most 4,000,000 characters per text; when that runs out before
+every mark in a paragraph has a verdict for its present surroundings, that
+paragraph and every later one keep none of their marks. In testing, 4 MiB of
+short mixed Arabic, Hebrew, and English paragraphs with 227,000 marks used
+up to three quarters of the budget, and adversarial inputs took up to about
+five and a half times as long as policy 2 (about four times at 4 MiB) and at
+most about 60 MB more memory. Embeddings, overrides, and isolates (U+202A to
+U+202E and U+2066 to U+2069) are always removed: they can reorder whole
+spans, which is how Trojan Source attacks make text display in a different
+order from the one it is stored in. A kept mark still reorders text, since
+that is its job, but only where the text around it shows the change. These
+rules are policy version 3; version 2 normalized every space variant and
+removed every directional mark.
 
 The directional-mark rule is checked against two independent
 implementations of the bidirectional algorithm, ICU (with Unicode 17.0 data)

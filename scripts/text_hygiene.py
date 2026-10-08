@@ -475,10 +475,12 @@ def _is_known_emoji_zwj_pair(previous_base: str, next_base: str) -> bool:
 
 
 def _is_explicit_removal(code_point: int) -> bool:
-    return (
-        code_point in _REMOVABLE_FORMAT_CODE_POINTS
-        or 0xE0000 <= code_point <= 0xE007F
-        or _in_ranges(code_point, _UNASSIGNED_DEFAULT_IGNORABLE_RANGES)
+    if code_point in _REMOVABLE_FORMAT_CODE_POINTS:
+        return True
+    if code_point < 0xFFF0:
+        return False
+    return 0xE0000 <= code_point <= 0xE007F or _in_ranges(
+        code_point, _UNASSIGNED_DEFAULT_IGNORABLE_RANGES
     )
 
 
@@ -533,7 +535,16 @@ def _classify(
     character = text[offset]
     code_point = ord(character)
 
-    if unicodedata.category(character) == "Zs" and character != " ":
+    # Nothing in ASCII is ever acted on: the first candidate is U+00A0.
+    if code_point < 0x80:
+        return None
+
+    category = unicodedata.category(character)
+    # Letters and numbers are never acted on, except the invisible fillers.
+    if category[0] in "LN" and code_point not in _INVISIBLE_LETTERS_AND_MARKS:
+        return None
+
+    if category == "Zs":
         return "normalize", None
 
     if character in _JOINERS:
@@ -581,7 +592,7 @@ def _classify(
     if _is_explicit_removal(code_point):
         return "remove", None
 
-    if unicodedata.category(character) == "Cf":
+    if category == "Cf":
         return "preserve", "unclassified format control preserved conservatively"
 
     if code_point in _INVISIBLE_LETTERS_AND_MARKS:

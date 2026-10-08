@@ -22,7 +22,7 @@
 # reference file added upstream can never be silently left behind. File bytes
 # come from the stamped commit itself, not the working tree, and each header
 # records the upstream blob id, so scripts/check-vendor-headers can prove the
-# vendored body is exactly that blob. The new tree is built in a staging
+# vendored body is exactly that blob. The new tree is built in a private work
 # directory and swapped in only after every file was vendored.
 #
 # A fix never lands here. It lands upstream in the canonical repo, is
@@ -152,18 +152,18 @@ vendor_file() {
   short_sha="$6"
   shared="$7"
 
-  # Only a regular file may be vendored. A symlink, submodule, or directory
-  # entry would vendor something other than the upstream file's bytes.
+  # Only a plain (mode 100644) file may be vendored. A symlink, submodule,
+  # directory, or executable entry is not an ordinary upstream reference.
   entry=$(git -C "$src_repo" ls-tree "$full_sha" -- "$src_rel") \
     || die "could not read $up_name @ $short_sha: $src_rel"
   case "$entry" in
     "100644 blob "*) ;;
     "") die "upstream file missing: $up_name @ $short_sha: $src_rel" ;;
-    *) die "upstream path is not a regular file: $up_name @ $short_sha: $src_rel" ;;
+    *) die "upstream path is not a plain file (mode 100644 blob): $up_name @ $short_sha: $src_rel" ;;
   esac
   blob_sha=$(git -C "$src_repo" rev-parse "$full_sha:$src_rel")
 
-  dest="$STAGE/${dest_rel#vendor/}"
+  dest="$NEW/${dest_rel#vendor/}"
   mkdir -p "$(dirname -- "$dest")"
   {
     emit_header "$up_name" "$src_rel" "$full_sha" "$short_sha" "$shared" "$blob_sha"
@@ -208,12 +208,24 @@ printf 'sync-upstream: humanizer=%s @ %s\n' "$HZ" "$HZ_SHORT"
 printf 'sync-upstream: authenticity-check=%s @ %s\n' "$AC" "$AC_SHORT"
 printf 'sync-upstream: stamp date=%s\n\n' "$SYNC_DATE"
 
-# Build the new tree beside vendor/ and swap it in only once every file was
-# vendored, so a failure part way through never leaves vendor/ half rebuilt.
-# A removed-upstream file cannot linger because the tree is built from empty.
-STAGE="$ROOT/.vendor-sync.$$"
-mkdir "$STAGE" || die "could not create staging directory: $STAGE"
-trap 'rm -rf "$STAGE"' EXIT
+# Build the new tree in a private, unpredictably named work directory beside
+# vendor/ and swap it in only once every file was vendored, so a failure part
+# way through never leaves vendor/ half rebuilt. A removed-upstream file cannot
+# linger because the tree is built from empty.
+WORK=$(mktemp -d "$ROOT/.vendor-sync.XXXXXX") \
+  || die "could not create a work directory in $ROOT"
+NEW="$WORK/new"
+mkdir "$NEW"
+
+# On any exit, put the previous tree back if the swap did not finish, then
+# remove the work directory.
+cleanup() {
+  if [ ! -d "$ROOT/vendor" ] && [ -d "$WORK/old" ]; then
+    mv "$WORK/old" "$ROOT/vendor"
+  fi
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 
 # --- humanizer skill (canonical: humanizer) ---------------------------------
@@ -234,15 +246,14 @@ for rel in $AC_REFS; do
   fi
 done
 
+# The swap is two renames. Signals are ignored between them so it cannot be
+# interrupted half done; if the second rename fails, cleanup restores the
+# previous tree.
+trap '' HUP INT TERM
 if [ -d "$ROOT/vendor" ]; then
-  mv "$ROOT/vendor" "$STAGE.old"
+  mv "$ROOT/vendor" "$WORK/old"
 fi
-if ! mv "$STAGE" "$ROOT/vendor"; then
-  if [ -d "$STAGE.old" ]; then
-    mv "$STAGE.old" "$ROOT/vendor"
-  fi
-  die "could not move the new tree into place; vendor/ is unchanged"
-fi
-rm -rf "$STAGE.old"
+mv "$NEW" "$ROOT/vendor" \
+  || die "could not move the new tree into place; vendor/ is unchanged"
 
 printf '\nsync-upstream: done. Now run scripts/check and commit vendor/.\n'

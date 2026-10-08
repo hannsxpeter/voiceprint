@@ -52,6 +52,10 @@ to semantic versioning.
   `scripts/check-vendor-headers` fails when a vendored `SKILL.md` names a
   reference file that was not vendored. The fixed list would have silently
   skipped both reference files the upstreams added.
+- `scripts/check-upstream-freshness` reports a re-sync as due only when an
+  upstream commit since the stamp changed `SKILL.md` or a `references/` file,
+  so commits that touch only an upstream's CI or documentation no longer
+  raise false alarms.
 - One entry point, `scripts/check`, runs every repository check, and CI runs
   it on Python 3.10 (the documented minimum) and 3.14. The new
   `tests/test_repository.py` covers frontmatter, version consistency, adapter
@@ -107,14 +111,16 @@ to semantic versioning.
   matching the delimiter would run whatever follows it (eval 13).
 - `scripts/sync-upstream` refuses to run outside a voiceprint checkout, fails
   closed when upstream `git status` fails, vendors only regular files
-  directly under `references/`, and builds the new tree beside `vendor/`
-  before swapping it in. A crafted upstream or a symlinked invocation can no
-  longer write outside `vendor/`, delete another `vendor/` directory, or
-  leave `vendor/` half rebuilt.
+  directly under `references/`, and builds the new tree in a private work
+  directory before swapping it in, with signals ignored during the swap and
+  the old tree restored if it fails. A crafted upstream or a symlinked
+  invocation can no longer write outside `vendor/`, delete another `vendor/`
+  directory, or leave `vendor/` half rebuilt.
 - `scripts/check-vendor-headers` verifies each vendored body against the
   upstream blob id stamped in its header, so an edit made here instead of
-  upstream fails CI. `.gitattributes` keeps git from converting line endings
-  in `vendor/`.
+  upstream fails CI unless the stamp is rewritten too, which shows in review
+  as a `Source blob` change with no `Source commit` change. `.gitattributes`
+  keeps git from converting line endings in `vendor/` and in `scripts/`.
 - CI checkout no longer persists credentials, and the freshness warning step
   runs on pushes only, so code from a pull request cannot read the token.
 

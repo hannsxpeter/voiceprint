@@ -203,7 +203,7 @@ host's normal permission prompt.
 Inside `What changed`, identify hygiene findings only by their observable
 code point, Unicode name, action, count, and up to 10 zero-based code-point
 offsets. Include the helper's preservation reason for every deliberately
-preserved joiner, selector, or tag character. If the manifest's findings list
+preserved character. If the manifest's findings list
 is empty, state explicitly that detected, removed, normalized, and
 deliberately preserved counts are all zero. Report the manifest counts before
 humanizer's `Text hygiene:` line. That line describes the already cleaned

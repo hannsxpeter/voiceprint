@@ -298,8 +298,10 @@ script. It is never hand-copied.
    header, which names the true canonical upstream (the shared criteria always
    point at humanizer even inside the authenticity-check tree), the source
    commit, and the upstream blob id of the body. The new tree is built beside
-   `vendor/` and swapped in only after every file succeeded. The script warns
-   when the commit is not on a remote-tracking branch and prints a summary.
+   `vendor/` and swapped in only after every file succeeded; if the script is
+   killed outright during the swap, `git checkout -- vendor` restores the
+   committed tree. The script warns when the commit is not on a
+   remote-tracking branch and prints a summary.
 4. Verify and commit the updated `vendor/`:
 
    ```sh
@@ -310,16 +312,19 @@ script. It is never hand-copied.
 `scripts/check-vendor-headers` runs inside `scripts/check` and therefore in CI
 (`.github/workflows/vendor-sync-check.yml`). It fails the build if any file
 under `vendor/` is missing a valid sync header, if a vendored body is not
-exactly the upstream blob its header names (an edit made here instead of
-upstream), or if a vendored `SKILL.md` names a reference file that was not
-vendored. Re-syncing is an obligation,
+exactly the blob its header names (which catches an edit made here instead of
+upstream; rewriting the stamp too shows in review as a `Source blob` change
+with no `Source commit` change), or if a vendored `SKILL.md` names a
+reference file that was not vendored. Re-syncing is an obligation,
 not an option: when the upstream criteria change, the vendored copies must be
 re-pulled or the product silently disagrees with the skills it advertises.
 `scripts/check-upstream-freshness` compares each vendored skill's stamped
-commit with its upstream's default branch. A scheduled `upstream-freshness`
-workflow runs it weekly and fails when a re-sync is due, and every push
-reports the same staleness as a warning, so this obligation does not depend
-on remembering. GitHub pauses scheduled workflows after 60 days without
+commit with its upstream's default branch and reports a re-sync as due when a
+newer upstream commit changed `SKILL.md` or a `references/` file; commits that
+touch only an upstream's CI, README, or other tooling do not count. A
+scheduled `upstream-freshness` workflow runs it weekly and fails when a
+re-sync is due, and every push reports the same staleness as a warning, so
+this obligation does not depend on remembering. GitHub pauses scheduled workflows after 60 days without
 repository activity, which is how the vendored copies missed every upstream
 release after 1.1.1 until 1.5.0. If the Actions tab shows
 `upstream-freshness` as disabled, re-enable it there or with

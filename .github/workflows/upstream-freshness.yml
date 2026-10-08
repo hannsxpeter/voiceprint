@@ -1,8 +1,9 @@
 name: upstream-freshness
 
-# Fails when a vendored skill has fallen behind its canonical upstream, so the
-# one-directional sync obligation cannot silently lapse (the vendored copies
-# once drifted a full version behind). Scheduled weekly and runnable on demand;
+# Fails when an upstream commit since the vendored stamp changed a vendored
+# path (SKILL.md or references/), so the one-directional sync obligation
+# cannot silently lapse (the vendored copies once drifted a full version
+# behind). Upstream commits that touch only CI or docs do not count. Scheduled weekly and runnable on demand;
 # it never runs on push or pull_request, so it never blocks normal development
 # (vendor-sync-check reports the same staleness there as a warning). A stale
 # or unverifiable result fails the run, which surfaces in the Actions tab and

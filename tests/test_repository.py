@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Repository consistency checks: frontmatter, versions, adapters, evals,
-scripts, workflows, and the dash policy."""
+scripts, workflows, the dash policy, and the vendoring scripts."""
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -298,6 +299,160 @@ class VendorHeaderCheckTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn(b"shared criteria must name the humanizer repo", result.stderr)
+
+
+class SyncUpstreamTests(unittest.TestCase):
+    """Run scripts/sync-upstream against two tiny upstream repos."""
+
+    HUMANIZER_REFERENCES = (
+        "do-not-flag.md",
+        "examples.md",
+        "tell-patterns.md",
+        "voice-matching.md",
+    )
+    AUTHENTICITY_REFERENCES = (
+        "do-not-flag.md",
+        "examples.md",
+        "scoring.md",
+        "tell-patterns.md",
+        "voice-matching.md",
+    )
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.base = Path(directory.name)
+        self.root = self.base / "voiceprint"
+        (self.root / "scripts").mkdir(parents=True)
+        for name in ("sync-upstream", "check-vendor-headers"):
+            shutil.copy2(ROOT / "scripts" / name, self.root / "scripts")
+        shutil.copy2(ROOT / "SKILL.md", self.root / "SKILL.md")
+        self.humanizer = self.make_upstream(
+            "humanizer", "references/tell-patterns.md", self.HUMANIZER_REFERENCES
+        )
+        self.authenticity = self.make_upstream(
+            "authenticity-check", "references/scoring.md", self.AUTHENTICITY_REFERENCES
+        )
+        self.assertEqual(self.sync().returncode, 0)
+        self.baseline = self.vendor_snapshot()
+
+    def git(self, repo, *args):
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+            cwd=repo,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+
+    def make_upstream(self, name, skill_reference, references):
+        repo = self.base / name
+        (repo / "references").mkdir(parents=True)
+        (repo / "SKILL.md").write_text(
+            f"# {name}\n\nRead `{skill_reference}`.\n", encoding="utf-8"
+        )
+        for reference in references:
+            (repo / "references" / reference).write_text(
+                f"{name} {reference}\n", encoding="utf-8"
+            )
+        self.git(repo, "init", "-q")
+        self.git(repo, "add", "-A")
+        self.git(repo, "commit", "-q", "-m", "initial")
+        return repo
+
+    def sync(self, script=None, humanizer=None):
+        return subprocess.run(
+            [
+                "sh",
+                str(script or self.root / "scripts" / "sync-upstream"),
+                str(humanizer or self.humanizer),
+                str(self.authenticity),
+            ],
+            env={**os.environ, "SYNC_DATE": "2026-01-01"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+    def vendor_snapshot(self):
+        vendor = self.root / "vendor"
+        return {
+            str(path.relative_to(vendor)): path.read_bytes()
+            for path in sorted(vendor.rglob("*"))
+            if path.is_file()
+        }
+
+    def assert_vendor_untouched(self):
+        self.assertEqual(self.vendor_snapshot(), self.baseline)
+        self.assertEqual(list(self.root.glob(".vendor-sync.*")), [])
+
+    def test_vendors_every_reference_with_a_verifiable_header(self):
+        self.assertEqual(
+            sorted(self.baseline),
+            sorted(
+                ["humanizer/SKILL.md"]
+                + [f"humanizer/references/{name}" for name in self.HUMANIZER_REFERENCES]
+                + ["authenticity-check/SKILL.md"]
+                + [
+                    f"authenticity-check/references/{name}"
+                    for name in self.AUTHENTICITY_REFERENCES
+                ]
+            ),
+        )
+        shared = self.baseline["authenticity-check/references/tell-patterns.md"]
+        self.assertIn(b"Canonical upstream: the `humanizer` repo", shared)
+        self.assertTrue(shared.endswith(b"humanizer tell-patterns.md\n"))
+        check = subprocess.run(
+            ["sh", str(self.root / "scripts" / "check-vendor-headers")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(check.returncode, 0, check.stderr.decode())
+
+    def test_refuses_to_run_outside_a_voiceprint_checkout(self):
+        elsewhere = self.base / "home"
+        (elsewhere / "bin").mkdir(parents=True)
+        (elsewhere / "vendor").mkdir()
+        (elsewhere / "vendor" / "keep.txt").write_text("keep\n", encoding="utf-8")
+        link = elsewhere / "bin" / "sync-upstream"
+        link.symlink_to(self.root / "scripts" / "sync-upstream")
+
+        result = self.sync(script=link)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"is not the voiceprint repository", result.stderr)
+        self.assertTrue((elsewhere / "vendor" / "keep.txt").is_file())
+
+    def test_rejects_a_symlink_reference_without_touching_vendor(self):
+        (self.humanizer / "references" / "evil.md").symlink_to("../SKILL.md")
+        self.git(self.humanizer, "add", "-A")
+        self.git(self.humanizer, "commit", "-q", "-m", "link")
+
+        result = self.sync()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"is not a plain file", result.stderr)
+        self.assert_vendor_untouched()
+
+    def test_failure_mid_build_leaves_vendor_untouched(self):
+        self.git(self.humanizer, "rm", "-q", "references/voice-matching.md")
+        self.git(self.humanizer, "commit", "-q", "-m", "drop shared file")
+
+        result = self.sync()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"upstream file missing", result.stderr)
+        self.assert_vendor_untouched()
+
+    def test_refuses_an_upstream_with_uncommitted_tracked_changes(self):
+        (self.humanizer / "SKILL.md").write_text("edited\n", encoding="utf-8")
+
+        result = self.sync()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(b"uncommitted tracked changes", result.stderr)
+        self.assert_vendor_untouched()
 
 
 if __name__ == "__main__":

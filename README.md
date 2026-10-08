@@ -169,16 +169,17 @@ the paragraph being judged and every later one keep none of their marks, and
 so does a paragraph whose marks still lack verdicts for their present
 surroundings after 8 passes. In testing on an Apple M4 Max, 4 MiB of short
 mixed Arabic, Hebrew, and English paragraphs with 227,000 marks used three
-quarters of the budget. Adversarial inputs took at most about six and a half
-seconds longer than under policy 2, the slowest being 4 MiB of one-line
-paragraphs that each hold marks (about four and a half times as long), and
-used at most about 30 MB more memory. Embeddings, overrides, and isolates
-(U+202A to U+202E and U+2066 to U+2069) are always removed: they can reorder
-whole spans, which is how Trojan Source attacks make text display in a
-different order from the one it is stored in. A kept mark still reorders
-text, since that is its job, but only where the text around it shows the
-change. These rules are policy version 3; version 2 normalized every space
-variant and removed every directional mark.
+quarters of the budget. Adversarial inputs took at most about eight seconds
+longer than under policy 2, the slowest being 4 MiB of paragraphs a few
+characters long that each hold marks (about four and a half times as long),
+and used at most about 110 MB more memory, the most for inputs that keep
+hundreds of thousands of marks. Embeddings, overrides, and isolates (U+202A
+to U+202E and U+2066 to U+2069) are always removed: they can reorder whole
+spans, which is how Trojan Source attacks make text display in a different
+order from the one it is stored in. A kept mark still reorders text, since
+that is its job, but only where the text around it shows the change. These
+rules are policy version 3; version 2 normalized every space variant and
+removed every directional mark.
 
 The directional-mark rule is checked against two independent
 implementations of the bidirectional algorithm, ICU (with Unicode 17.0 data)

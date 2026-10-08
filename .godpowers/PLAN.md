@@ -1,5 +1,7 @@
 # Plan
 
+Status: done. This plan shipped as voiceprint 1.5.0 (PR hannsxpeter/voiceprint#4). Later work, including hygiene policy 3 and the move to Python 3.11, is tracked in STATE.md and DECISIONS.md.
+
 ## Goal
 Release voiceprint 1.5.0: bring the vendored skills current with their
 latest upstream releases (humanizer 1.3.1, authenticity-check 1.2.1), make

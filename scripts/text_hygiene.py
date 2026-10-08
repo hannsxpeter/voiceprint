@@ -7,6 +7,7 @@ import argparse
 from array import array
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterator
+from itertools import accumulate, chain
 import json
 import os
 import re
@@ -170,10 +171,10 @@ _DEFAULT_BIDI_RANGES = (
 # unjudged would leave room to hide data.
 _MARK_WINDOW = 64
 # How many characters judging may examine in one text. 4 MiB of short mixed
-# Arabic, Hebrew, and English paragraphs with 227,000 marks needed up to three
-# quarters of it in testing. Once it runs out, the paragraph being judged
-# keeps no marks unless all of them have current verdicts, and later
-# paragraphs keep none, which bounds the time adversarial input can take.
+# Arabic, Hebrew, and English paragraphs with 227,000 marks needed three
+# quarters of it in testing. Once it runs out, the paragraph being judged and
+# every later one keep none of their marks, which bounds the time adversarial
+# input can take.
 _MARK_BUDGET = 4_000_000
 # Judging repeats while a pass removes marks, up to this many passes.
 _MARK_PASSES = 8
@@ -822,16 +823,27 @@ def _resolve_brackets(classes, types, direction, pairs, fixed):
 
     for index, value in fixed.items():
         set_type(index, value)
+    if not pairs:
+        return
     opposite = "R" if direction == "L" else "L"
+    # Pairs nest and resolve in order of their opening brackets, so no pair
+    # changes a character inside a pair still to come, and counts taken now
+    # say which strong types each pair holds.
+    kinds = [strong(value) for value in types]
+    counts = {
+        side: list(accumulate((kind == side for kind in kinds), initial=0))
+        for side in ("L", "R")
+    }
     for opening, closing in sorted(pairs):
-        inside = {strong(value) for value in types[opening + 1 : closing]}
-        if direction in inside:
+        if counts[direction][closing] > counts[direction][opening + 1]:
             resolved = direction
-        elif opposite in inside:
-            context = next(
-                (strong(value) for value in reversed(types[:opening]) if strong(value)),
-                direction,
-            )
+        elif counts[opposite][closing] > counts[opposite][opening + 1]:
+            context = direction
+            for index in range(opening - 1, -1, -1):
+                kind = strong(types[index])
+                if kind:
+                    context = kind
+                    break
             resolved = opposite if context == opposite else direction
         else:
             continue
@@ -879,17 +891,6 @@ def _bracket_structure(text: str, start: int, end: int) -> tuple[array, array]:
     return positions, partners
 
 
-def _pair_brackets(text: str, start: int, end: int) -> tuple[list[int], list[int]]:
-    """The opening and closing offsets of each bracket pair, by opening."""
-    positions, partners = _bracket_structure(text, start, end)
-    pairs = [
-        (positions[index], positions[partner])
-        for index, partner in enumerate(partners)
-        if partner > index
-    ]
-    return [opening for opening, _ in pairs], [closing for _, closing in pairs]
-
-
 def _visual_order(levels: list[int]) -> list[int]:
     """Indices in display order (bidi rule L2)."""
     order = list(range(len(levels)))
@@ -925,15 +926,15 @@ class _ParagraphMarks:
         self.context = context
         self.budget = budget
         self.cache = cache
-        self.candidates = array("l", self._find_candidates())
+        self.candidates = array("i", self._find_candidates())
         count = len(self.candidates)
         self.alive = bytearray(b"\x01") * count
-        self.previous = array("l", range(-1, count - 1))
-        self.following = array("l", range(1, count + 1))
+        self.previous = array("i", range(-1, count - 1))
+        self.following = array("i", range(1, count + 1))
         self.head = 0
         # The span each mark's last judgment read, to know what to judge again.
-        self.read_low = array("l", self.candidates)
-        self.read_high = array("l", self.candidates)
+        self.read_low = array("i", self.candidates)
+        self.read_high = array("i", self.candidates)
         self.widest = 0
         # Marks kept for setting the paragraph direction read every mark
         # before the first letter; they are tracked apart so that span does
@@ -1086,42 +1087,75 @@ class _ParagraphMarks:
                     break
         return self.holds[key]
 
-    def _pairs_to_include(self, mark, low, high, mark_direction):
-        """Pairs, by opening index, a window must hold whole for rule N0.
+    def _unheld_pairs(self, indices, low, high, direction):
+        """Pairs, by opening index, with a bracket among indices and the other
+        outside low..high, that hold no character of the paragraph direction."""
+        found = []
+        for index in indices:
+            self.budget[0] -= 1
+            partner = self.partners[index]
+            if partner >= 0 and not low <= self.brackets[partner] <= high:
+                opening = min(index, partner)
+                if not self._holds(opening, direction):
+                    found.append(opening)
+        return found
+
+    def _widen(self, low, high, at_end, mark_direction):
+        """A window grown over every bracket pair rule N0 needs it to hold whole.
 
         A pair holding a letter of the paragraph direction resolves to that
         direction whatever the marks, so it never needs widening. Any other
         pair with a bracket in the window does, and so does a pair around the
         whole window with no other character of the mark's direction, which
-        the mark alone could decide.
+        the mark alone could decide. Returns the window's bounds, whether it
+        reaches the end of the paragraph, and whether it fits the limits.
         """
         direction = self._paragraph_direction(None)
         brackets, partners = self.brackets, self.partners
-        found = []
-        first = self._bracket_index(low)
-        for index in range(first, bisect_right(brackets, high)):
-            partner = partners[index]
-            if partner < 0:
-                continue
-            opening = min(index, partner)
-            if partner > index:
-                outside = brackets[partner] > high
-            else:
-                outside = brackets[partner] < low
-            if outside and not self._holds(opening, direction):
-                found.append(opening)
-        index = first - 1
-        opening = self.enclosing[index] if index >= 0 else -1
+        first = last = self._bracket_index(low)
+        # Pairs around a grown window were around the first one, and whether
+        # a pair needs widening does not depend on the window, so the pairs
+        # around the window are checked once.
+        pending = []
+        opening = self.enclosing[first - 1] if first > 0 else -1
         while opening >= 0:
+            self.budget[0] -= 1
             if (
                 brackets[opening] < low
                 and brackets[partners[opening]] > high
                 and not self._holds(opening, direction)
                 and not self._holds(opening, mark_direction)
             ):
-                found.append(opening)
+                pending.append(opening)
             opening = self.enclosing[opening - 1] if opening > 0 else -1
-        return found
+        while True:
+            # Only brackets the window gained since the last check can belong
+            # to a pair it does not hold whole yet.
+            grown_first = self._bracket_index(low)
+            grown_last = bisect_right(brackets, high)
+            pending.extend(
+                self._unheld_pairs(
+                    chain(range(grown_first, first), range(last, grown_last)),
+                    low,
+                    high,
+                    direction,
+                )
+            )
+            first, last = grown_first, grown_last
+            if self.budget[0] <= 0:
+                return low, high, at_end, False
+            if not pending:
+                return low, high, at_end, True
+            for opening in pending:
+                if brackets[opening] < low:
+                    low, _ = self._letter(brackets[opening], -1)
+                closing = brackets[partners[opening]]
+                if closing > high:
+                    high, found = self._letter(closing, 1)
+                    at_end = not found
+            pending = []
+            if high - low > _MARK_SPAN:
+                return low, high, at_end, False
 
     def _paragraph_direction(self, without: int | None) -> str:
         """The paragraph direction (rule P2), optionally without one mark."""
@@ -1186,23 +1220,11 @@ class _ParagraphMarks:
         window = [*left, mark_element, *right]
         if self._has_pairs():
             initial = low, high
-            mark_direction = _direction(mark_element[1])
-            while True:
-                grown = False
-                for opening in self._pairs_to_include(mark, low, high, mark_direction):
-                    first = self.brackets[opening]
-                    last = self.brackets[self.partners[opening]]
-                    if first < low:
-                        low, _ = self._letter(first, -1)
-                        grown = True
-                    if last > high:
-                        high, found = self._letter(last, 1)
-                        at_end = not found
-                        grown = True
-                if self.budget[0] <= 0 or high - low > _MARK_SPAN:
-                    return None, low, high
-                if not grown:
-                    break
+            low, high, at_end, fits = self._widen(
+                low, high, at_end, _direction(mark_element[1])
+            )
+            if not fits:
+                return None, low, high
             if (low, high) != initial:
                 window = self._elements(mark, low, high)
                 if self.budget[0] <= 0:
@@ -1227,13 +1249,14 @@ class _ParagraphMarks:
                     # Only a pair fixed to the paragraph direction reaches out.
                     fixed[index] = direction
         # The judgment depends only on these facts, so equal shapes share it.
+        # Bracket indices are packed, so a key holds a few bytes per bracket.
         shape = (
             "".join(self._shape_code(element) for element in window),
             position,
             direction,
             at_end,
-            tuple(pairs),
-            tuple(fixed),
+            array("i", [index for pair in pairs for index in pair]).tobytes(),
+            array("i", fixed).tobytes(),
         )
         if shape not in self.cache:
             if len(self.cache) >= _MARK_CACHE_SIZE:
@@ -1355,11 +1378,13 @@ class _ParagraphMarks:
                     dirty[other] = 1
             if not removed or self.budget[0] <= 0:
                 break
-        if any(self.alive[item] and dirty[item] for item in range(count)):
-            # The budget or the pass limit ran out before every mark had a
-            # verdict for its present surroundings. Removing only those could
-            # change the paragraph direction or another mark's verdict, so
-            # the paragraph keeps none of its marks.
+        if self.budget[0] <= 0 or any(
+            self.alive[item] and dirty[item] for item in range(count)
+        ):
+            # The budget ran out, or the pass limit did before every mark had
+            # a verdict for its present surroundings. Removing only the marks
+            # without one could change the paragraph direction or another
+            # mark's verdict, so the paragraph keeps none of its marks.
             return {}
         return {
             self.candidates[item]: reason
@@ -1392,6 +1417,9 @@ def _kept_mark_reasons(text: str, context: _Context) -> dict[int, str]:
         ):
             continue
         kept.update(_ParagraphMarks(text, start, end, context, budget, cache).judge())
+        if budget[0] <= 0:
+            # Every later paragraph would keep none of its marks.
+            break
     return kept
 
 

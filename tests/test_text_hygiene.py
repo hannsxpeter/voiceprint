@@ -53,6 +53,27 @@ def hex_sequence(text):
     return " ".join(f"{ord(character):04X}" for character in text)
 
 
+def kept_marks(manifest):
+    """Offsets of the directional marks a manifest keeps."""
+    return sorted(
+        offset
+        for item in manifest["findings"]
+        if item["action"] == "preserve"
+        and item["code_point"] in ("U+200E", "U+200F", "U+061C")
+        for offset in item["offsets"]
+    )
+
+
+def bracket_pairs(text):
+    """The bracket pairs of text by offset, in order of their opening brackets."""
+    positions, partners = text_hygiene._bracket_structure(text, 0, len(text))
+    return [
+        (positions[index], positions[partner])
+        for index, partner in enumerate(partners)
+        if partner > index
+    ]
+
+
 class TextHygieneApiTests(unittest.TestCase):
     def test_removes_each_hidden_control_family(self):
         source = (
@@ -667,19 +688,17 @@ class TypographyAndDirectionTests(unittest.TestCase):
         self.assertEqual(set(text_hygiene._PARAGRAPH_SEPARATORS), separators)
 
     def test_pairs_brackets_as_definition_bd16_describes(self):
-        def pairs(text):
-            openings, closings = text_hygiene._pair_brackets(text, 0, len(text))
-            return sorted(zip(openings, closings))
-
-        self.assertEqual(pairs("a(b[c]d)e"), [(1, 7), (3, 5)])
+        self.assertEqual(bracket_pairs("a(b[c]d)e"), [(1, 7), (3, 5)])
         # Canonically equivalent angle brackets pair with each other.
-        self.assertEqual(pairs("\u2329x\u3009 \u3008y\u232a"), [(0, 2), (4, 6)])
+        self.assertEqual(
+            bracket_pairs("\u2329x\u3009 \u3008y\u232a"), [(0, 2), (4, 6)]
+        )
         # A closing bracket with no opening partner is skipped, and a
         # mismatched one closes the nearest opening it does match.
-        self.assertEqual(pairs(")(a]b)"), [(1, 5)])
+        self.assertEqual(bracket_pairs(")(a]b)"), [(1, 5)])
         # The search stops when 63 opening brackets are waiting.
-        self.assertEqual(len(pairs("(" * 63 + ")" * 63)), 63)
-        self.assertEqual(pairs("(" * 64 + ")" * 64), [])
+        self.assertEqual(len(bracket_pairs("(" * 63 + ")" * 63)), 63)
+        self.assertEqual(bracket_pairs("(" * 64 + ")" * 64), [])
 
     def test_resolver_follows_each_bidi_rule(self):
         # Expected levels agree with ICU and GNU FriBidi, except the combining
@@ -707,9 +726,8 @@ class TypographyAndDirectionTests(unittest.TestCase):
                 base_level = int(
                     next(value for value in classes if value in ("L", "R", "AL")) != "L"
                 )
-                openings, closings = text_hygiene._pair_brackets(text, 0, len(text))
                 levels = text_hygiene._resolve_levels(
-                    classes, base_level, True, list(zip(openings, closings))
+                    classes, base_level, True, bracket_pairs(text)
                 )
 
                 self.assertEqual(levels, expected)
@@ -1063,6 +1081,66 @@ class TypographyAndDirectionTests(unittest.TestCase):
             cleaned = clean_text(source)[0]
 
         self.assertEqual(clean_text(cleaned)[0], cleaned)
+
+    def test_keeps_no_marks_when_the_pass_limit_runs_out(self):
+        # The right-to-left mark sets the paragraph direction and is judged
+        # again once the left-to-right mark goes. With one pass that second
+        # judgment never happens, so the paragraph keeps none of its marks.
+        source = "\u200f-\u200eb \u05d0"
+        self.assert_mark(source, "U+200F", "preserve", SETS_DIRECTION_REASON)
+        with mock.patch.object(text_hygiene, "_MARK_PASSES", 1):
+            cleaned, manifest = clean_text(source)
+
+        self.assertEqual(cleaned, "-b \u05d0")
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+
+    def test_keeps_only_marks_judged_in_full_at_every_budget(self):
+        # Wherever the budget runs out, including inside a window widened
+        # over brackets, a mark stays only if the full budget keeps it too,
+        # and cleaning the cleaned copy changes nothing.
+        source = (
+            HEBREW_SHALOM
+            + " \u200e(Hello) "
+            + HEBREW_OLAM
+            + " (b)\u200e(c) \u05d2(\u05d0\u05d1\u200e\t\u05d2\u05d3) Hello!\u200e"
+        )
+        full = kept_marks(clean_text(source)[1])
+        self.assertEqual(full, [5, 22, 43])
+        for budget in range(1, 80):
+            with self.subTest(budget=budget):
+                with mock.patch.object(text_hygiene, "_MARK_BUDGET", budget):
+                    cleaned, manifest = clean_text(source)
+
+                self.assertLessEqual(set(kept_marks(manifest)), set(full))
+                self.assertEqual(clean_text(cleaned)[0], cleaned)
+
+    def test_checks_each_bracket_once_per_judgment(self):
+        # Each pair resolves by the one before it, so judging any mark here
+        # widens over the whole row. Checking every bracket again at each
+        # step once made a single judgment quadratic in the number of pairs.
+        source = "\u05d0" + "(b)\u200e" * 200 + "\u05d0"
+        checked = []
+        judge = text_hygiene._ParagraphMarks._judge
+        unheld_pairs = text_hygiene._ParagraphMarks._unheld_pairs
+
+        def counting_judge(marks, item):
+            checked.append(0)
+            return judge(marks, item)
+
+        def counting_unheld_pairs(marks, indices, *rest):
+            indices = list(indices)
+            checked[-1] += len(indices)
+            return unheld_pairs(marks, indices, *rest)
+
+        with mock.patch.object(
+            text_hygiene._ParagraphMarks, "_judge", counting_judge
+        ), mock.patch.object(
+            text_hygiene._ParagraphMarks, "_unheld_pairs", counting_unheld_pairs
+        ):
+            manifest = clean_text(source)[1]
+
+        self.assertEqual(kept_marks(manifest), [4])
+        self.assertLessEqual(max(checked), 400)
 
     def test_removes_marks_in_paragraphs_with_explicit_controls(self):
         # The isolate goes, and a mark that worked inside it could reorder the

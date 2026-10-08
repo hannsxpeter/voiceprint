@@ -31,8 +31,8 @@ to semantic versioning.
   - Unassigned code points take their Unicode default direction, characters
     the helper removes no longer influence what it keeps, and cleaning the
     cleaned copy changes nothing whenever judging finishes within its budget.
-    When the budget runs out, every mark without a current verdict is
-    removed rather than kept.
+    When the budget runs out, the paragraph being judged and every later one
+    keep none of their marks.
 - Python 3.11 is the documented minimum, and CI tests 3.11 and 3.14, because
   Python 3.10 reaches end of life in October 2026.
 - `SKILL.md` stops the pass on any non-zero exit from the hygiene helper, not

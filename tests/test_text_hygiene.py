@@ -915,6 +915,112 @@ class TypographyAndDirectionTests(unittest.TestCase):
 
                 self.assertEqual(kept, expected)
 
+    def test_pins_rules_that_once_slipped_past_the_suite(self):
+        # Inputs on which a resolver with one rule subtly wrong kept different
+        # marks; the kept offsets agree with ICU and GNU FriBidi.
+        cases = (
+            (
+                "W4 joins only numbers of one type",
+                (
+                    "0028 0022 200E 0028 200B 200F 0025 00A0 0661 2030 200B 3009 "
+                    "064E 200B 05FF 2329 002B 0661 200F 002C 0032 061C 0063"
+                ),
+                [2, 5],
+            ),
+            (
+                "N0 counts numbers as R",
+                (
+                    "200E 05E6 200E 05E1 05D2 0020 0020 002A 3000 0646 0591 062A "
+                    "0646 062A 200E 2007 0628 0645 0646 200F 062B 0628 00A0 0030 "
+                    "2030 2329 2030 0661 0666 232A 061C 061C 0020 0020"
+                ),
+                [0, 2, 14],
+            ),
+            (
+                "N0 takes pairs in opening order",
+                (
+                    "2329 005B 0026 0009 0020 005D 002D 0035 0031 002C 007B 200E "
+                    "05D4 200E 200F 05E6 061C 05D2 05B8 0023 3000 007D 0020 0020 "
+                    "061C 0028 0031 0034 0038 202F 0033 3000 0029 05E9 05E3 05D9 "
+                    "0020 232A 2007"
+                ),
+                [11, 13, 24],
+            ),
+            (
+                "combining-mark attachment counts",
+                (
+                    "0591 0030 002F 0063 0660 200E 05D1 000B 0028 0323 0031 2329 "
+                    "0031 0009 200F 05B8 002F FEFF 001F 061C 0062 002D 0301 05D3 "
+                    "002C 0031"
+                ),
+                [5, 19],
+            ),
+            (
+                "BD16 drops openers above a match",
+                (
+                    "0028 061C 200F 202F 007B 0064 3000 0661 200F 0063 0064 0301 "
+                    "2329 200F 0031 00A0 0029 05FF 232A 232A 0029 002E 0020 002E "
+                    "200F 061C 200B"
+                ),
+                [1, 8, 13],
+            ),
+            (
+                "a pair counts only letters for L",
+                (
+                    "0063 0063 064E 2019 061C 3000 0028 0038 202F 0033 002D 0026 "
+                    "0020 05E2 0591 05DA 05E6 05DA 05E9 FEFF 3000 0029 2007 061C "
+                    "200E 007C 2007"
+                ),
+                [4, 23],
+            ),
+            (
+                "a pair counts only letters and AN for R",
+                (
+                    "05E4 05D2 0020 2329 0061 005B 0065 0066 0068 0065 0068 05DD "
+                    "05E6 05E9 05DD 200E 200E 005D 0645 0628 0065 0062 061C 200E "
+                    "0063 064E 0066 200F 007B 000B 0020 0027 3000 0061 0067 0039 "
+                    "0031 0031 2060 0020"
+                ),
+                [22, 27],
+            ),
+            (
+                "judging repeats until stable",
+                "FE0F 200E 00A0 200F 0660 007B 200E 061C 05D3 00A0",
+                [6],
+            ),
+            (
+                "paragraph direction is part of the shape",
+                (
+                    "0663 0667 0664 0660 002C 05D9 05D3 200F 0591 0020 0020 0665 "
+                    "202F 2007 007C 05D6 200E 05DF 05E7 05D1 05D7 3000 061C 000A "
+                    "002E 0030 003F 2007 0030 005B 002B 0062 001F 200B 05D3 05FF "
+                    "200F 0323 002E 2030"
+                ),
+                [],
+            ),
+            (
+                "normalized spaces are WS",
+                (
+                    "2007 200E 05B8 002A 002E 3008 001F 200E 0022 2007 3000 2007 "
+                    "0064 0627 002A 002C 00A0 200F 001F 05D3 007B 0628 0031 05D0"
+                ),
+                [17],
+            ),
+        )
+        for name, code_points, expected in cases:
+            with self.subTest(name=name):
+                source = "".join(chr(int(value, 16)) for value in code_points.split())
+                manifest = clean_text(source)[1]
+                kept = sorted(
+                    offset
+                    for item in manifest["findings"]
+                    if item["action"] == "preserve"
+                    and item["code_point"] in ("U+200E", "U+200F", "U+061C")
+                    for offset in item["offsets"]
+                )
+
+                self.assertEqual(kept, expected)
+
     def test_removes_marks_whose_bracket_window_is_too_wide(self):
         # The mark decides the pair, but judging it means reading the pair.
         self.assert_mark(
@@ -936,6 +1042,17 @@ class TypographyAndDirectionTests(unittest.TestCase):
         with mock.patch.object(text_hygiene, "_MARK_BUDGET", 1):
             self.assert_mark(source, "U+200E", "remove")
         self.assert_mark(source, "U+200E", "preserve", CHANGES_DISPLAY_REASON)
+
+    def test_keeps_no_marks_in_a_paragraph_the_budget_cannot_finish(self):
+        # Removing only the unjudged marks here would take the mark that sets
+        # the paragraph direction and leave the others judged under the old
+        # direction, so the paragraph keeps none of its marks.
+        source = "\u200e \u200f\u05d0 " + "\u05d2 \u200e \u05d3 " * 10
+        with mock.patch.object(text_hygiene, "_MARK_BUDGET", 30):
+            cleaned, manifest = clean_text(source)
+
+        self.assertEqual(manifest["summary"]["preserved"], 0)
+        self.assertEqual(clean_text(cleaned)[0], cleaned)
 
     def test_removes_marks_whose_verdict_the_budget_left_stale(self):
         # Each Arabic letter mark is kept while the left-to-right mark after

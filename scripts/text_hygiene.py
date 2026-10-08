@@ -933,6 +933,10 @@ class _ParagraphMarks:
         self.read_low = array("l", self.candidates)
         self.read_high = array("l", self.candidates)
         self.widest = 0
+        # Marks kept for setting the paragraph direction read every mark
+        # before the first letter; they are tracked apart so that span does
+        # not widen the search for every other mark's readers.
+        self.direction_setters: set[int] = set()
         self.first_letter = next(
             (
                 offset
@@ -1163,8 +1167,7 @@ class _ParagraphMarks:
         mark = self.candidates[item]
         direction = self._paragraph_direction(None)
         if direction != self._paragraph_direction(mark):
-            # Only the marks before the first letter decide the direction.
-            return _SETS_DIRECTION, self.start, min(self.first_letter, self.end - 1)
+            return _SETS_DIRECTION, mark, mark
         left, left_letter = self._side(mark, -1)
         right, right_letter = (
             self._side(mark, 1) if left_letter is not None else ([], None)
@@ -1300,9 +1303,15 @@ class _ParagraphMarks:
     def _readers(self, item: int) -> list[int]:
         """The marks still in place whose last judgment read this mark."""
         mark = self.candidates[item]
+        readers = []
+        if mark < self.first_letter:
+            readers.extend(
+                setter
+                for setter in self.direction_setters
+                if setter != item and self.alive[setter]
+            )
         first = bisect_left(self.candidates, mark - self.widest)
         last = bisect_right(self.candidates, mark + self.widest)
-        readers = []
         for other in range(first, last):
             self.budget[0] -= 1
             if (
@@ -1312,20 +1321,6 @@ class _ParagraphMarks:
             ):
                 readers.append(other)
         return readers
-
-    def _fail_closed(self, item: int) -> None:
-        """Remove a mark that cannot be judged, and every mark that read it.
-
-        Any removal while judging already marks its readers for judging
-        again, so the cascade only matters when the pass limit ends judging
-        with marks still waiting; it keeps that case failing closed too.
-        """
-        waiting = [item]
-        while waiting:
-            current = waiting.pop()
-            if self.alive[current]:
-                self._remove(current)
-                waiting.extend(self._readers(current))
 
     def judge(self) -> dict[int, str]:
         """Offsets of the marks to keep, with reasons."""
@@ -1344,6 +1339,10 @@ class _ParagraphMarks:
                 reason, low, high = self._judge(item)
                 self.read_low[item], self.read_high[item] = low, high
                 self.widest = max(self.widest, high - low)
+                if reason == _SETS_DIRECTION:
+                    self.direction_setters.add(item)
+                else:
+                    self.direction_setters.discard(item)
                 if reason is not None:
                     reasons[item] = reason
                     continue
@@ -1354,11 +1353,12 @@ class _ParagraphMarks:
                     dirty[other] = 1
             if not removed or self.budget[0] <= 0:
                 break
-        # A mark without a verdict for its present surroundings, because the
-        # budget or the pass limit ran out, is removed rather than trusted.
-        for item in range(count):
-            if self.alive[item] and dirty[item]:
-                self._fail_closed(item)
+        if any(self.alive[item] and dirty[item] for item in range(count)):
+            # The budget or the pass limit ran out before every mark had a
+            # verdict for its present surroundings. Removing only those could
+            # change the paragraph direction or another mark's verdict, so
+            # the paragraph keeps none of its marks.
+            return {}
         return {
             self.candidates[item]: reason
             for item, reason in enumerate(reasons)

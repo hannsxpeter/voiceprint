@@ -163,9 +163,9 @@ nothing (at most 8 passes). Only the first mark of a run can stay, and a mark
 is removed when it sits between a letter and its combining mark, more than
 64 characters from the nearest letter, or where the text to judge would
 span more than 4,096 characters. To bound adversarial input, judging
-examines at most 4,000,000 characters per text; when that runs out, every
-mark without a verdict for its present surroundings is removed, along with
-any mark whose judgment read one. 4 MiB documents with 240,000 marks used
+examines at most 4,000,000 characters per text; when that runs out, the
+paragraph being judged and every later one keep none of their marks. 4 MiB
+documents with 240,000 marks used
 between a fifth and a half of the budget in testing, and adversarial 4 MiB
 inputs take up to about three and a half times as long as policy 2 and stay
 under 230 MB. Embeddings,

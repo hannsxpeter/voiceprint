@@ -10,12 +10,12 @@ to semantic versioning.
 ### Changed
 
 - Re-synced the vendored skills to their latest upstream releases, humanizer
-  1.3.0 (@ a5f8a33) and authenticity-check 1.2.1 (@ b20c10a), from the 1.1.1
+  1.3.1 (@ 09bf76d) and authenticity-check 1.2.1 (@ b20c10a), from the 1.1.1
   commits vendored in 1.2.0. This adds humanizer's prompt-level text-hygiene
   preflight (`references/text-hygiene.md`, with an exact codepoint search
   since 1.3.0) and authenticity-check's read-only Unicode provenance
   preflight (`references/provenance-signals.md`) with its
-  `Provenance signals` report section. humanizer 1.3.0 also corrects its
+  `Provenance signals` report section. humanizer 1.3 also corrects its
   worked examples and the shared criteria (`tell-patterns.md`,
   `voice-matching.md`) that voiceprint vendors into both trees.
 - The output contract now states how those upstream additions fit the single
@@ -66,7 +66,7 @@ to semantic versioning.
   action is pinned to a full commit SHA like the validation workflow, and the
   workflow documents how to re-enable it after GitHub's inactivity pause.
 - `SKILL.md` frontmatter adds `license: MIT`, lists `allowed-tools` in the
-  space-separated form from the Agent Skills spec (as humanizer 1.3.0 does),
+  space-separated form from the Agent Skills spec (as humanizer has since 1.3.0),
   and states the Python 3.10 requirement in `compatibility`.
 - Added eval 12 (provenance signals and `Next step`) and eval 13 (a draft
   that tries to close a heredoc).

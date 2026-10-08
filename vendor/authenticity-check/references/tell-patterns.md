@@ -5,7 +5,7 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `humanizer` repo, references/tell-patterns.md
   (github.com/hannsxpeter/humanizer).
-Source commit: a5f8a3319871f8796582c42621d9e48f7975da45
+Source commit: 09bf76d20d5213d4299a0c7043f16c254c2aaac7
 Source blob: fde5d4e8bbddc8786fcced025715bf07ec9d2544
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
@@ -22,7 +22,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-10-07 from humanizer @ a5f8a33
+Last synced: 2026-10-07 from humanizer @ 09bf76d
 =============================================================================
 -->
 

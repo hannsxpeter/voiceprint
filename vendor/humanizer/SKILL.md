@@ -5,8 +5,8 @@ VENDORED FILE - SYNCED COPY, NOT THE SOURCE OF TRUTH
 
 Canonical upstream: the `humanizer` repo, SKILL.md
   (github.com/hannsxpeter/humanizer).
-Source commit: a5f8a3319871f8796582c42621d9e48f7975da45
-Source blob: d89a5be324e6575361d1a4db5b599a729c3928df
+Source commit: 09bf76d20d5213d4299a0c7043f16c254c2aaac7
+Source blob: 62248758be19ab223041fb5569e597e9678b2a01
 
 This is a verbatim synced copy vendored into the `voiceprint` repo, a
 thin orchestrator that runs this skill but does not own it. The canonical
@@ -17,7 +17,7 @@ is then re-synced here with scripts/sync-upstream.
 
 Synced copy, do not edit here, edit upstream.
 
-Last synced: 2026-10-07 from humanizer @ a5f8a33
+Last synced: 2026-10-07 from humanizer @ 09bf76d
 =============================================================================
 -->
 
@@ -38,7 +38,7 @@ description: >-
 license: MIT
 allowed-tools: Read Write Edit Glob Grep
 metadata:
-  version: 1.3.0
+  version: 1.3.1
 ---
 
 # Humanizer

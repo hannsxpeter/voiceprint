@@ -259,6 +259,6 @@ if [ -d "$ROOT/vendor" ]; then
   mv "$ROOT/vendor" "$WORK/old"
 fi
 mv "$NEW" "$ROOT/vendor" \
-  || die "could not move the new tree into place; vendor/ is unchanged"
+  || die "could not move the new tree into place; restoring the previous tree"
 
 printf '\nsync-upstream: done. Now run scripts/check and commit vendor/.\n'

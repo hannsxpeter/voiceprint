@@ -11,11 +11,11 @@ updated: 2026-10-08
 Give writers and editors who use AI coding tools one honest pass over a draft: diagnose it, clean and rewrite it once, and report what is left. Success means the vendored skills stay current with their upstreams, the hygiene helper never alters valid text, and every document matches what the code and the vendored skills actually do.
 
 ## Now
-- The three remaining low risks are fixed on branch `claude/fix-low-risks`, unreleased (the changelog's `[Unreleased]` section): hygiene policy 3 keeps typographic spaces and the directional marks that change the display, Python 3.11 is the documented and tested minimum, and maintainer guidance moved from `AGENTS.md` to the new `CONTRIBUTING.md`. The directional-mark rule agrees with GNU FriBidi on 52,828 random mixed-direction paragraphs.
+- The three remaining low risks are fixed on branch `claude/fix-low-risks` (PR hannsxpeter/voiceprint#11), unreleased (the changelog's `[Unreleased]` section): hygiene policy 3 keeps typographic spaces and the directional marks that change the display, Python 3.11 is the documented and tested minimum, and maintainer guidance moved from `AGENTS.md` to the new `CONTRIBUTING.md`. After the first review and security pass, the mark rule applies the bidi algorithm itself; it agrees with GNU FriBidi on 30,000 random paragraphs and leaves no invisible no-op mark in realistic prose except around opposite-direction parentheticals.
 - v1.5.2 is the latest release (PR hannsxpeter/voiceprint#9, merged as 527b6e5), vendoring humanizer 1.3.1 and authenticity-check 1.2.3. `main` is protected by the "Protect main" ruleset.
 
 ## Next
-- Merge the pull request after review, a security pass, and CI on Python 3.11 and 3.14, with the ruleset's required checks moved from the 3.10 job to the 3.11 job.
+- Re-review the revised mark rule, then merge the pull request after CI on Python 3.11 and 3.14, with the ruleset's required checks moved from the 3.10 job to the 3.11 job.
 - Cut 1.6.0 when the maintainer asks.
 - Re-sync `vendor/` whenever upstream-freshness reports a re-sync as due.
 

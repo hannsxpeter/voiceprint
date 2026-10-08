@@ -178,7 +178,7 @@
       "expectations": [
         "The Before section and the before authenticity diagnosis receive the exact submitted code-point sequence, including all four U+00A0 characters",
         "What changed reports detected 4, removed 0, normalized 1, deliberately preserved 3",
-        "What changed gives the reason 'no-break space inside a number' for U+00A0 at offset 18 and 'no-break space between a number and a unit, symbol, or word' for U+00A0 at offsets 22 and 32",
+        "What changed gives the reason 'no-break space inside a number' for U+00A0 at offset 18 and 'no-break space between a number and a unit or symbol' for U+00A0 at offsets 22 and 32",
         "The no-break space at offset 46, between every and step, becomes an ordinary space in the working copy before humanizer runs",
         "The output retains exactly the six top-level Voiceprint sections"
       ]

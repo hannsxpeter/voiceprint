@@ -111,9 +111,11 @@ place. Standard output is the cleaned working copy; standard error is the
 deterministic JSON manifest. Input is capped at 4 MiB, which comfortably
 exceeds the 100,000-code-point product requirement.
 
-If the helper exits 2 because input is too large, invalid UTF-8, unreadable, or
-cannot be processed or written, stop before humanizer runs. State that the
-original was not changed and do not claim cleanup succeeded.
+If the helper exits with any status other than 0, stop before humanizer runs.
+Exit 2 means the input is too large, is not valid UTF-8, cannot be read, or
+could not be processed or written; any other status, such as a process the
+host stopped, is a failure too. State that the original was not changed and
+do not claim cleanup succeeded.
 
 Pass only the cleaned working copy to one invocation of
 `vendor/humanizer/SKILL.md` and follow it exactly,

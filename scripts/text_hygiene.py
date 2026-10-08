@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+from array import array
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterator
 import json
 import os
@@ -118,15 +120,94 @@ _CJK_RANGES = (
     (0x1AFF0, 0x1B16F),
     (0x20000, 0x3FFFF),
 )
-# The implicit directional marks (LEFT-TO-RIGHT MARK, RIGHT-TO-LEFT MARK, and
-# ARABIC LETTER MARK) are kept only where removing one changes the display.
-# Embeddings, overrides, and isolates are always removed.
+# The implicit directional marks: LEFT-TO-RIGHT MARK, RIGHT-TO-LEFT MARK, and
+# ARABIC LETTER MARK. Embeddings, overrides, and isolates are always removed.
 _DIRECTIONAL_MARKS = frozenset({chr(0x200E), chr(0x200F), chr(0x061C)})
+_MARK_PATTERN = re.compile("[" + "".join(sorted(_DIRECTIONAL_MARKS)) + "]")
+_EXPLICIT_DIRECTIONAL_CONTROLS = tuple(
+    chr(code_point) for code_point in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))
+)
+# No right-to-left letter comes before U+0590.
+_FIRST_RIGHT_TO_LEFT = chr(0x0590)
 _STRONG_DIRECTIONS = frozenset({"L", "R", "AL"})
-# Roles passed over when finding the characters on either side of a mark.
-_TRANSPARENT_ROLES = frozenset({"skip", "combining", "mark"})
-# Each judging pass can only remove marks; the cap bounds adversarial input.
+_NEUTRAL_TYPES = frozenset({"B", "S", "WS", "ON"})
+# Bidi_Class defaults for code points the running Python leaves unassigned,
+# from the @missing lines of
+# https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedBidiClass.txt.
+# Other unassigned code points default to BN (noncharacters and
+# default-ignorable code points) or L.
+_DEFAULT_BIDI_RANGES = (
+    (0x0590, 0x05FF, "R"),
+    (0x0600, 0x07BF, "AL"),
+    (0x07C0, 0x085F, "R"),
+    (0x0860, 0x08FF, "AL"),
+    (0x20A0, 0x20CF, "ET"),
+    (0xFB1D, 0xFB4F, "R"),
+    (0xFB50, 0xFDCF, "AL"),
+    (0xFDF0, 0xFDFF, "AL"),
+    (0xFE70, 0xFEFF, "AL"),
+    (0x10800, 0x10CFF, "R"),
+    (0x10D00, 0x10D3F, "AL"),
+    (0x10D40, 0x10EBF, "R"),
+    (0x10EC0, 0x10EFF, "AL"),
+    (0x10F00, 0x10F2F, "R"),
+    (0x10F30, 0x10F6F, "AL"),
+    (0x10F70, 0x10FFF, "R"),
+    (0x1E800, 0x1EC6F, "R"),
+    (0x1EC70, 0x1ECBF, "AL"),
+    (0x1ECC0, 0x1ECFF, "R"),
+    (0x1ED00, 0x1ED4F, "AL"),
+    (0x1ED50, 0x1EDFF, "R"),
+    (0x1EE00, 0x1EEFF, "AL"),
+    (0x1EF00, 0x1EFFF, "R"),
+)
+# A mark is judged on the characters between the nearest letters around it,
+# at most this many on each side. A mark farther from a letter is removed:
+# such long runs without letters are rare in prose, and keeping their marks
+# unjudged would leave room to hide data.
+_MARK_WINDOW = 64
+# How many characters judging may examine in one text. A 4 MiB document with
+# 240,000 marks needs about half of it. Past this, marks not yet judged are
+# removed, which bounds the time adversarial input can take.
+_MARK_BUDGET = 4_000_000
+# Judging repeats while a pass removes marks, up to this many passes.
 _MARK_PASSES = 8
+# Judgments are remembered by the shape of the text around the mark, up to
+# this many shapes per text.
+_MARK_CACHE_SIZE = 65_536
+_SETS_DIRECTION = "directional mark that sets its paragraph's direction"
+_CHANGES_DISPLAY = (
+    "directional mark that changes the order or mirroring of nearby characters"
+)
+_NEAR_BRACKET = "directional mark near a bracket, kept conservatively"
+# Opening and closing brackets that pair under bidi rule N0, from
+# https://www.unicode.org/Public/17.0.0/ucd/BidiBrackets.txt.
+_BRACKET_PAIRS = (
+    (0x0028, 0x0029), (0x005B, 0x005D), (0x007B, 0x007D), (0x0F3A, 0x0F3B),
+    (0x0F3C, 0x0F3D), (0x169B, 0x169C), (0x2045, 0x2046), (0x207D, 0x207E),
+    (0x208D, 0x208E), (0x2308, 0x2309), (0x230A, 0x230B), (0x2329, 0x232A),
+    (0x2768, 0x2769), (0x276A, 0x276B), (0x276C, 0x276D), (0x276E, 0x276F),
+    (0x2770, 0x2771), (0x2772, 0x2773), (0x2774, 0x2775), (0x27C5, 0x27C6),
+    (0x27E6, 0x27E7), (0x27E8, 0x27E9), (0x27EA, 0x27EB), (0x27EC, 0x27ED),
+    (0x27EE, 0x27EF), (0x2983, 0x2984), (0x2985, 0x2986), (0x2987, 0x2988),
+    (0x2989, 0x298A), (0x298B, 0x298C), (0x298D, 0x2990), (0x298F, 0x298E),
+    (0x2991, 0x2992), (0x2993, 0x2994), (0x2995, 0x2996), (0x2997, 0x2998),
+    (0x29D8, 0x29D9), (0x29DA, 0x29DB), (0x29FC, 0x29FD), (0x2E22, 0x2E23),
+    (0x2E24, 0x2E25), (0x2E26, 0x2E27), (0x2E28, 0x2E29), (0x2E55, 0x2E56),
+    (0x2E57, 0x2E58), (0x2E59, 0x2E5A), (0x2E5B, 0x2E5C), (0x3008, 0x3009),
+    (0x300A, 0x300B), (0x300C, 0x300D), (0x300E, 0x300F), (0x3010, 0x3011),
+    (0x3014, 0x3015), (0x3016, 0x3017), (0x3018, 0x3019), (0x301A, 0x301B),
+    (0xFE59, 0xFE5A), (0xFE5B, 0xFE5C), (0xFE5D, 0xFE5E), (0xFF08, 0xFF09),
+    (0xFF3B, 0xFF3D), (0xFF5B, 0xFF5D), (0xFF5F, 0xFF60), (0xFF62, 0xFF63),
+)
+_CLOSING_BRACKETS = {chr(closing): chr(opening) for opening, closing in _BRACKET_PAIRS}
+_OPENING_BRACKETS = frozenset(chr(opening) for opening, _ in _BRACKET_PAIRS)
+_PAIRED_BRACKETS = _OPENING_BRACKETS | frozenset(_CLOSING_BRACKETS)
+# Canonically equivalent brackets pair with each other's partners.
+_CANONICAL_BRACKETS = {chr(0x2329): chr(0x3008), chr(0x232A): chr(0x3009)}
+_BRACKET_PATTERN = re.compile("[" + re.escape("".join(sorted(_PAIRED_BRACKETS))) + "]")
+# The bracket-pair search stops after this many unclosed opening brackets.
+_BRACKET_DEPTH = 63
 # The characters of bidi class B, each of which ends a paragraph.
 _PARAGRAPH_SEPARATORS = "".join(
     chr(code_point) for code_point in (0x0A, 0x0D, 0x1C, 0x1D, 0x1E, 0x85, 0x2029)
@@ -515,10 +596,48 @@ def _tag_sequence_offsets(text: str) -> frozenset[int]:
     return frozenset(offsets)
 
 
+def _is_zero_width(character: str) -> bool:
+    """Whether a character takes no space of its own: format controls and marks."""
+    return unicodedata.category(character) in (
+        "Cf",
+        "Mn",
+        "Me",
+    ) or _is_explicit_removal(ord(character))
+
+
+def _visible_neighbor(text: str, offset: int, step: int) -> str:
+    """The nearest character that takes space before (-1) or after (+1) offset."""
+    offset += step
+    while 0 <= offset < len(text) and _is_zero_width(text[offset]):
+        offset += step
+    return text[offset] if 0 <= offset < len(text) else ""
+
+
+def _unit_follows(text: str, offset: int) -> bool:
+    """Whether one to three letters, then a non-letter or the end, follow offset."""
+    letters = 0
+    for character in text[offset + 1 : offset + 16]:
+        if _is_zero_width(character):
+            continue
+        if (
+            unicodedata.category(character)[0] != "L"
+            or ord(character) in _INVISIBLE_LETTERS_AND_MARKS
+        ):
+            return 0 < letters
+        letters += 1
+        if letters > 3:
+            return False
+    return 0 < letters <= 3 and offset + 16 >= len(text)
+
+
 def _no_break_reason(text: str, offset: int) -> str | None:
-    """Why a no-break space holds typography together, or None."""
-    before = text[offset - 1] if offset else ""
-    after = text[offset + 1 : offset + 2]
+    """Why a no-break space holds typography together, or None.
+
+    The neighbors are the nearest characters that take space, so an invisible
+    character beside the space, removed or kept, never changes the answer.
+    """
+    before = _visible_neighbor(text, offset, -1)
+    after = _visible_neighbor(text, offset, 1)
     digit_before = bool(before) and unicodedata.category(before) == "Nd"
     if digit_before and after and unicodedata.category(after) == "Nd":
         return "no-break space inside a number"
@@ -527,10 +646,13 @@ def _no_break_reason(text: str, offset: int) -> str | None:
     if (
         digit_before
         and after
-        and ord(after) not in _INVISIBLE_LETTERS_AND_MARKS
-        and (after in _PERCENT_SIGNS or unicodedata.category(after)[0] in "LS")
+        and (
+            after in _PERCENT_SIGNS
+            or unicodedata.category(after)[0] == "S"
+            or _unit_follows(text, offset)
+        )
     ):
-        return "no-break space between a number and a unit, symbol, or word"
+        return "no-break space between a number and a unit or symbol"
     if (
         after in _FRENCH_CLOSING_PUNCTUATION and before and not before.isspace()
     ) or (before in _FRENCH_OPENING_QUOTES and after and not after.isspace()):
@@ -555,9 +677,9 @@ def _cjk_space_offsets(text: str) -> frozenset[int]:
         end = start
         while end < len(text) and text[end] == _IDEOGRAPHIC_SPACE:
             end += 1
-        if (start > 0 and _is_cjk(text[start - 1])) or (
-            end < len(text) and _is_cjk(text[end])
-        ):
+        before = _visible_neighbor(text, start, -1)
+        after = _visible_neighbor(text, end - 1, 1)
+        if (before and _is_cjk(before)) or (after and _is_cjk(after)):
             offsets.update(range(start, end))
         start = text.find(_IDEOGRAPHIC_SPACE, end)
     return frozenset(offsets)
@@ -572,203 +694,507 @@ def _paragraphs(text: str) -> Iterator[tuple[int, int]]:
     yield start, len(text)
 
 
-def _bidi_role(character: str) -> str:
-    """The part a character plays when judging a directional mark."""
-    if character in _DIRECTIONAL_MARKS:
-        return "mark"
+def _bidi_class(character: str) -> str:
+    """The Bidi_Class of a character, with Unicode's default when unassigned."""
     bidi_class = unicodedata.bidirectional(character)
-    # The bidi algorithm ignores BN, and explicit removals are gone from the
-    # cleaned copy. A nonspacing mark takes its base's direction.
-    if bidi_class == "BN" or _is_explicit_removal(ord(character)):
-        return "skip"
-    if bidi_class == "NSM":
-        return "combining"
-    if bidi_class in _STRONG_DIRECTIONS:
+    if bidi_class:
         return bidi_class
-    # Numbers (weak-type rules), paired brackets (rule N0), and tabs (rule
-    # L1) can change what a mark does in ways the judgment below does not
-    # model, so a mark that shares a stretch with one is kept.
+    code_point = ord(character)
     if (
-        bidi_class in ("EN", "AN", "S")
-        or unicodedata.category(character) in ("Ps", "Pe")
-        and unicodedata.mirrored(character)
+        0xFDD0 <= code_point <= 0xFDEF
+        or code_point & 0xFFFE == 0xFFFE
+        or code_point == 0x2065
+        or 0xFFF0 <= code_point <= 0xFFF8
+        or 0xE0000 <= code_point <= 0xE0FFF
     ):
-        return "unmodeled"
-    return "neutral"
+        return "BN"
+    for start, end, default in _DEFAULT_BIDI_RANGES:
+        if start <= code_point <= end:
+            return default
+    return "L"
 
 
 def _direction(bidi_class: str) -> str:
     return "L" if bidi_class == "L" else "R"
 
 
-def _mark_reason(
-    mark_class: str,
-    strong_before: str | None,
-    strong_after: str | None,
-    paragraph_direction: str | None,
-    near_unmodeled: bool,
-    neighbor_before: str | None,
-    neighbor_after: str | None,
-) -> str | None:
-    """Why removing a directional mark would change the display, or None.
+def _resolve_levels(
+    classes: list[str],
+    base_level: int,
+    line_end: bool,
+    pairs: list[tuple[int, int]] = (),
+    fixed: dict[int, str] | None = None,
+) -> list[int]:
+    """Embedding levels for a stretch of one paragraph (bidi rules W1 to I2, L1).
 
-    strong_before and strong_after are the bidi classes of the nearest strong
-    letter or kept mark on each side, and the neighbors are the roles of the
-    characters right beside the mark. The check compares, with and without
-    the mark, the paragraph direction (bidi rule P2), whether the mark splits
-    a run of letters that would otherwise be reversed together (rule L2), and
-    the direction given to the neutrals beside it (rules N1 and N2).
+    The stretch must hold every strong character that its weak and neutral
+    characters depend on, so it runs from a strong character, or the start of
+    the paragraph, to a strong character, or the end. For rule N0, pairs are
+    the bracket pairs inside the stretch, by index, and fixed gives the type
+    of each bracket whose pair reaches outside it.
     """
-    mark_direction = _direction(mark_class)
-    if strong_before is None:
-        embedding = _direction(strong_after) if strong_after else "L"
-        if mark_direction != embedding:
-            return "directional mark that sets its paragraph's direction"
-    else:
-        embedding = paragraph_direction
-    if near_unmodeled:
-        return "directional mark near a number, bracket, or tab, kept conservatively"
-    if (
-        mark_direction == embedding
-        and neighbor_before in _STRONG_DIRECTIONS
-        and neighbor_after in _STRONG_DIRECTIONS
-        and _direction(neighbor_before) != embedding
-        and _direction(neighbor_after) != embedding
-    ):
-        return "directional mark that splits a run of opposite-direction letters"
-    left = _direction(strong_before) if strong_before else embedding
-    right = _direction(strong_after) if strong_after else embedding
-    without = left if left == right else embedding
-    with_left = left if left == mark_direction else embedding
-    with_right = mark_direction if mark_direction == right else embedding
-    if (neighbor_before == "neutral" and with_left != without) or (
-        neighbor_after == "neutral" and with_right != without
-    ):
-        return (
-            "directional mark that changes the direction of nearby punctuation "
-            "or spaces"
-        )
-    return None
-
-
-def _strong_class(paragraph: str, roles: list[str], index: int) -> str:
-    """The bidi class of a strong letter or a directional mark."""
-    role = roles[index]
-    if role in _STRONG_DIRECTIONS:
-        return role
-    return unicodedata.bidirectional(paragraph[index])
-
-
-def _kept_marks_in_paragraph(paragraph: str) -> dict[int, str]:
-    """Offsets of the directional marks to keep in one paragraph, with reasons."""
-    roles = [_bidi_role(character) for character in paragraph]
-    if "R" not in roles and "AL" not in roles:
-        return {}
-
-    # Facts that do not depend on which marks stay: the nearest strong letter
-    # and the nearest character that is not skipped on each side, a running
-    # count of unmodeled characters, and whether a combining mark follows.
-    size = len(roles)
-    letter_before = [-1] * (size + 1)
-    shown_before = [-1] * (size + 1)
-    unmodeled_count = [0] * (size + 1)
-    for index, role in enumerate(roles):
-        strong = role in _STRONG_DIRECTIONS
-        letter_before[index + 1] = index if strong else letter_before[index]
-        shown = role not in _TRANSPARENT_ROLES
-        shown_before[index + 1] = index if shown else shown_before[index]
-        unmodeled_count[index + 1] = unmodeled_count[index] + (role == "unmodeled")
-    letter_after = [size] * (size + 1)
-    shown_after = [size] * (size + 1)
-    combining_next = [False] * (size + 1)
-    for index in range(size - 1, -1, -1):
-        role = roles[index]
-        strong = role in _STRONG_DIRECTIONS
-        letter_after[index] = index if strong else letter_after[index + 1]
-        shown = role not in _TRANSPARENT_ROLES
-        shown_after[index] = index if shown else shown_after[index + 1]
-        combining_next[index] = role == "combining" or (
-            role in ("skip", "mark") and combining_next[index + 1]
-        )
-
-    # Only the first mark of a run is a candidate; the rest are removed. So is
-    # a mark directly before a combining mark, which belongs to the letter
-    # before the mark.
-    marks: list[int] = []
-    after_mark = False
-    for index, role in enumerate(roles):
-        if role == "skip":
+    direction = "R" if base_level % 2 else "L"
+    types = list(classes)
+    previous = last_strong = direction
+    for index, value in enumerate(types):
+        if value == "NSM":
+            value = previous
+        if value in _STRONG_DIRECTIONS:
+            last_strong = value
+        elif value == "EN" and last_strong == "AL":
+            value = "AN"
+        types[index] = previous = value
+    types = ["R" if value == "AL" else value for value in types]
+    for index in range(1, len(types) - 1):
+        value = types[index]
+        if value == "ES" and types[index - 1] == "EN" == types[index + 1]:
+            types[index] = "EN"
+        elif value == "CS" and types[index - 1] == types[index + 1] in ("EN", "AN"):
+            types[index] = types[index - 1]
+    index = 0
+    while index < len(types):
+        end = index
+        while end < len(types) and types[end] == "ET":
+            end += 1
+        if end > index and (
+            (index and types[index - 1] == "EN")
+            or (end < len(types) and types[end] == "EN")
+        ):
+            types[index:end] = ["EN"] * (end - index)
+        index = max(end, index + 1)
+    types = ["ON" if value in ("ES", "ET", "CS") else value for value in types]
+    last_strong = direction
+    for index, value in enumerate(types):
+        if value in ("L", "R"):
+            last_strong = value
+        elif value == "EN" and last_strong == "L":
+            types[index] = "L"
+    _resolve_brackets(classes, types, direction, pairs, fixed or {})
+    index = 0
+    while index < len(types):
+        if types[index] not in _NEUTRAL_TYPES:
+            index += 1
             continue
-        if role == "mark" and not after_mark and not combining_next[index + 1]:
-            marks.append(index)
-        after_mark = role == "mark"
+        end = index
+        while end < len(types) and types[end] in _NEUTRAL_TYPES:
+            end += 1
+        before = direction if index == 0 else ("L" if types[index - 1] == "L" else "R")
+        after = direction if end == len(types) else ("L" if types[end] == "L" else "R")
+        types[index:end] = [before if before == after else direction] * (end - index)
+        index = end
+    levels = []
+    for value in types:
+        if base_level % 2:
+            levels.append(base_level + (value in ("L", "EN", "AN")))
+        else:
+            levels.append(base_level + (2 if value in ("EN", "AN") else value == "R"))
+    reset = line_end
+    for index in range(len(classes) - 1, -1, -1):
+        if classes[index] == "S":
+            levels[index] = base_level
+            reset = True
+        elif classes[index] == "WS" and reset:
+            levels[index] = base_level
+        else:
+            reset = False
+    return levels
 
-    # Judge each remaining mark against the letters and the marks still in
-    # place, and remove it only when that leaves the display unchanged.
-    # Passes alternate direction until one removes nothing, so every kept
-    # mark is judged against the marks that stay.
-    count = len(marks)
-    previous = list(range(-1, count - 1))
-    following = list(range(1, count + 1))
-    alive = [True] * count
-    first = 0
-    reasons: list[str | None] = [None] * count
-    for pass_number in range(_MARK_PASSES):
-        removed = False
-        order = range(count) if pass_number % 2 == 0 else range(count - 1, -1, -1)
-        for item in order:
-            if not alive[item]:
-                continue
-            index = marks[item]
-            left_mark = marks[previous[item]] if previous[item] >= 0 else -1
-            right_mark = marks[following[item]] if following[item] < count else size
-            left = max(letter_before[index], left_mark)
-            right = min(letter_after[index + 1], right_mark)
-            # The paragraph direction comes from its first strong character.
-            start = min(letter_after[0], marks[first] if first < count else size)
-            reason = _mark_reason(
-                unicodedata.bidirectional(paragraph[index]),
-                _strong_class(paragraph, roles, left) if left >= 0 else None,
-                _strong_class(paragraph, roles, right) if right < size else None,
-                _direction(_strong_class(paragraph, roles, start))
-                if start < index
-                else None,
-                unmodeled_count[index] > unmodeled_count[left + 1]
-                or unmodeled_count[right] > unmodeled_count[index + 1],
-                roles[shown_before[index]] if shown_before[index] >= 0 else None,
-                roles[shown_after[index + 1]]
-                if shown_after[index + 1] < size
-                else None,
+
+def _resolve_brackets(classes, types, direction, pairs, fixed):
+    """Bidi rule N0 for the bracket pairs of a stretch, in place."""
+
+    def strong(value):
+        return "L" if value == "L" else "R" if value in ("R", "EN", "AN") else None
+
+    def set_type(index, value):
+        types[index] = value
+        index += 1
+        while index < len(types) and classes[index] == "NSM":
+            types[index] = value
+            index += 1
+
+    for index, value in fixed.items():
+        set_type(index, value)
+    opposite = "R" if direction == "L" else "L"
+    for opening, closing in sorted(pairs):
+        inside = {strong(value) for value in types[opening + 1 : closing]}
+        if direction in inside:
+            resolved = direction
+        elif opposite in inside:
+            context = next(
+                (strong(value) for value in reversed(types[:opening]) if strong(value)),
+                direction,
             )
-            reasons[item] = reason
-            if reason is None:
-                alive[item] = False
+            resolved = opposite if context == opposite else direction
+        else:
+            continue
+        set_type(opening, resolved)
+        set_type(closing, resolved)
+
+
+def _visual_order(levels: list[int]) -> list[int]:
+    """Indices in display order (bidi rule L2)."""
+    order = list(range(len(levels)))
+    for level in range(max(levels, default=0), 0, -1):
+        index = 0
+        while index < len(order):
+            if levels[order[index]] < level:
+                index += 1
+                continue
+            end = index
+            while end < len(order) and levels[order[end]] >= level:
+                end += 1
+            order[index:end] = order[index:end][::-1]
+            index = end
+    return order
+
+
+class _ParagraphMarks:
+    """Judges the directional marks of one paragraph against the bidi algorithm.
+
+    A mark is removed only when the paragraph displays the same without it,
+    given the letters and the marks still in place: the same paragraph
+    direction, the same order of the characters around it, and the same
+    mirroring. Only the first mark of a run is a candidate, and so is no mark
+    directly before a combining mark, which belongs to the letter before it.
+    """
+
+    def __init__(self, text, start, end, context, budget, cache):
+        self.text = text
+        self.start = start
+        self.end = end
+        self.context = context
+        self.budget = budget
+        self.cache = cache
+        self.candidates = array("l", self._find_candidates())
+        count = len(self.candidates)
+        self.alive = bytearray(b"\x01") * count
+        self.previous = array("l", range(-1, count - 1))
+        self.following = array("l", range(1, count + 1))
+        self.head = 0
+        self.pairs: dict[int, int] | None = None
+        self.fixed: dict[int, str | None] = {}
+        self.first_letter = next(
+            (
+                offset
+                for offset in range(start, end)
+                if text[offset] not in _DIRECTIONAL_MARKS
+                and self._cleaned_class(offset) in _STRONG_DIRECTIONS
+            ),
+            end,
+        )
+
+    def _cleaned_class(self, offset: int) -> str:
+        """The bidi class of a character in the cleaned copy; BN once removed."""
+        classification = _classify(self.text, offset, self.context)
+        if classification is not None and classification[0] == "remove":
+            return "BN"
+        if classification is not None and classification[0] == "normalize":
+            return "WS"
+        return _bidi_class(self.text[offset])
+
+    def _find_candidates(self) -> Iterator[int]:
+        text, start, end = self.text, self.start, self.end
+        for match in _MARK_PATTERN.finditer(text, start, end):
+            offset = match.start()
+            before = offset - 1
+            while (
+                before >= start
+                and text[before] not in _DIRECTIONAL_MARKS
+                and self._cleaned_class(before) == "BN"
+            ):
+                before -= 1
+            if before >= start and text[before] in _DIRECTIONAL_MARKS:
+                continue
+            after = offset + 1
+            while after < end and (
+                text[after] in _DIRECTIONAL_MARKS or self._cleaned_class(after) == "BN"
+            ):
+                after += 1
+            if after < end and self._cleaned_class(after) == "NSM":
+                continue
+            yield offset
+
+    def _present(self, offset: int) -> bool:
+        index = bisect_left(self.candidates, offset)
+        return (
+            index < len(self.candidates)
+            and self.candidates[index] == offset
+            and bool(self.alive[index])
+        )
+
+    def _side(self, mark: int, step: int) -> tuple[list[tuple[int, str]], bool | None]:
+        """Characters beside a mark, nearest first, through the nearest letter.
+
+        Returns them with True when a letter ends them, False at the paragraph
+        edge, or None when the letter is more than _MARK_WINDOW characters away.
+        """
+        text = self.text
+        limit = self.start - 1 if step < 0 else self.end
+        elements: list[tuple[int, str]] = []
+        shown = 0
+        offset = mark + step
+        while offset != limit:
+            self.budget[0] -= 1
+            if text[offset] in _DIRECTIONAL_MARKS:
+                if self._present(offset):
+                    elements.append((offset, unicodedata.bidirectional(text[offset])))
+            else:
+                bidi_class = self._cleaned_class(offset)
+                if bidi_class != "BN":
+                    shown += 1
+                    if shown > _MARK_WINDOW:
+                        return elements, None
+                    elements.append((offset, bidi_class))
+                    if bidi_class in _STRONG_DIRECTIONS:
+                        return elements, True
+            offset += step
+        return elements, False
+
+    def _bracket_pairs(self) -> dict[int, int]:
+        """Each paired bracket's partner, by offset (definition BD16)."""
+        if self.pairs is None:
+            self.pairs = {}
+            stack: list[tuple[str, int]] = []
+            for match in _BRACKET_PATTERN.finditer(self.text, self.start, self.end):
+                character, offset = match.group(), match.start()
+                if character in _OPENING_BRACKETS:
+                    if len(stack) == _BRACKET_DEPTH:
+                        break
+                    canonical = _CANONICAL_BRACKETS.get(character, character)
+                    stack.append((canonical, offset))
+                    continue
+                opening = _CLOSING_BRACKETS[character]
+                opening = _CANONICAL_BRACKETS.get(opening, opening)
+                for depth in range(len(stack) - 1, -1, -1):
+                    if stack[depth][0] == opening:
+                        self.pairs[stack[depth][1]] = offset
+                        self.pairs[offset] = stack[depth][1]
+                        del stack[depth:]
+                        break
+        return self.pairs
+
+    def _fixed_type(self, offset: int, direction: str) -> str | None:
+        """The paragraph direction when a pair holds a letter of that direction.
+
+        Rule N0 then resolves the pair to the paragraph direction whatever the
+        marks around it, so its brackets can stand in for strong characters.
+        """
+        opening = min(offset, self._bracket_pairs()[offset])
+        if opening not in self.fixed:
+            wanted = ("L",) if direction == "L" else ("R", "AL", "AN")
+            self.fixed[opening] = None
+            for inside in range(opening + 1, self.pairs[opening]):
+                self.budget[0] -= 1
+                if self.budget[0] <= 0:
+                    break
+                if (
+                    self.text[inside] not in _DIRECTIONAL_MARKS
+                    and self._cleaned_class(inside) in wanted
+                ):
+                    self.fixed[opening] = direction
+                    break
+        return self.fixed[opening]
+
+    def _paragraph_direction(self, without: int | None) -> str:
+        """The paragraph direction (rule P2), optionally without one mark."""
+        head = self.head
+        if head < len(self.candidates) and self.candidates[head] == without:
+            head = self.following[head]
+        first = self.first_letter
+        if head < len(self.candidates) and self.candidates[head] < first:
+            first = self.candidates[head]
+        if first >= self.end:
+            return "L"
+        if self.text[first] in _DIRECTIONAL_MARKS:
+            return _direction(unicodedata.bidirectional(self.text[first]))
+        return _direction(self._cleaned_class(first))
+
+    def _display(self, window, levels):
+        """What a reader sees of a window: the order of its characters, whether
+        each combining mark stays at its base's level, and which characters are
+        mirrored."""
+        text = self.text
+        shown = [
+            offset
+            for offset, value in (window[index] for index in _visual_order(levels))
+            if value != "NSM" and text[offset] not in _DIRECTIONAL_MARKS
+        ]
+        attached = []
+        mirrored = []
+        base_level = None
+        for (offset, value), level in zip(window, levels):
+            if value == "NSM":
+                attached.append(level == base_level)
+            elif text[offset] not in _DIRECTIONAL_MARKS:
+                base_level = level
+                if unicodedata.mirrored(text[offset]):
+                    mirrored.append(level % 2)
+        return shown, attached, mirrored
+
+    def _judge(self, item: int) -> tuple[str | None, int, int]:
+        """A reason to keep a mark, or None, and the span its judgment read."""
+        mark = self.candidates[item]
+        direction = self._paragraph_direction(None)
+        if direction != self._paragraph_direction(mark):
+            return _SETS_DIRECTION, self.start, self.end - 1
+        left, left_letter = self._side(mark, -1)
+        right, right_letter = (
+            self._side(mark, 1) if left_letter is not None else ([], None)
+        )
+        if left_letter is None or right_letter is None:
+            # Too far from a letter to judge: removed, and every mark whose
+            # window could have held it is judged again.
+            return (
+                None,
+                left[-1][0] if left else mark,
+                right[-1][0] if right else mark,
+            )
+        left.reverse()
+        mark_element = (mark, unicodedata.bidirectional(self.text[mark]))
+        window = [*left, mark_element, *right]
+        low = left[0][0] if left else self.start
+        high = right[-1][0] if right else self.end - 1
+        index_of = {offset: index for index, (offset, _) in enumerate(window)}
+        pairs, fixed = [], {}
+        for index, (offset, _) in enumerate(window):
+            partner = (
+                self._bracket_pairs().get(offset)
+                if self.text[offset] in _PAIRED_BRACKETS
+                else None
+            )
+            if partner is None:
+                continue
+            if partner in index_of:
+                if offset < partner:
+                    pairs.append((index, index_of[partner]))
+                continue
+            fixed_type = self._fixed_type(offset, direction)
+            if fixed_type is None:
+                return _NEAR_BRACKET, low, high
+            fixed[index] = fixed_type
+        # The judgment depends only on these facts, so equal shapes share it.
+        shape = (
+            "".join(self._shape_code(element) for element in window),
+            len(left),
+            direction,
+            right_letter,
+            tuple(pairs),
+            tuple(fixed.items()),
+        )
+        if shape not in self.cache:
+            if len(self.cache) >= _MARK_CACHE_SIZE:
+                self.cache.clear()
+            self.cache[shape] = self._changes_display(
+                window, len(left), direction, not right_letter, pairs, fixed
+            )
+        return (_CHANGES_DISPLAY if self.cache[shape] else None), low, high
+
+    def _shape_code(self, element: tuple[int, str]) -> str:
+        offset, value = element
+        character = self.text[offset]
+        code = value + ("^" if character in _DIRECTIONAL_MARKS else "")
+        return code + ("~" if unicodedata.mirrored(character) else "") + ","
+
+    def _changes_display(self, window, position, direction, line_end, pairs, fixed):
+        """Whether the window displays differently without the mark at position."""
+        base_level = 0 if direction == "L" else 1
+        without = window[:position] + window[position + 1 :]
+
+        def shifted(index):
+            return index - (index > position)
+
+        displays = [
+            self._display(
+                window,
+                _resolve_levels(
+                    [value for _, value in window], base_level, line_end, pairs, fixed
+                ),
+            ),
+            self._display(
+                without,
+                _resolve_levels(
+                    [value for _, value in without],
+                    base_level,
+                    line_end,
+                    [(shifted(first), shifted(last)) for first, last in pairs],
+                    {shifted(index): value for index, value in fixed.items()},
+                ),
+            ),
+        ]
+        return displays[0] != displays[1]
+
+    def _remove(self, item: int) -> None:
+        self.alive[item] = 0
+        previous, following = self.previous[item], self.following[item]
+        if previous >= 0:
+            self.following[previous] = following
+        else:
+            self.head = following
+        if following < len(self.candidates):
+            self.previous[following] = previous
+
+    def judge(self) -> dict[int, str]:
+        """Offsets of the marks to keep, with reasons."""
+        count = len(self.candidates)
+        reasons: list[str | None] = [None] * count
+        dirty = bytearray(b"\x01") * count
+        for pass_number in range(_MARK_PASSES):
+            removed = False
+            order = range(count) if pass_number % 2 == 0 else range(count - 1, -1, -1)
+            for item in order:
+                if not (self.alive[item] and dirty[item]):
+                    continue
+                if self.budget[0] <= 0:
+                    if reasons[item] is None:
+                        self._remove(item)
+                    continue
+                dirty[item] = 0
+                reason, low, high = self._judge(item)
+                if reason is not None:
+                    reasons[item] = reason
+                    continue
+                self._remove(item)
                 removed = True
-                if previous[item] >= 0:
-                    following[previous[item]] = following[item]
-                else:
-                    first = following[item]
-                if following[item] < count:
-                    previous[following[item]] = previous[item]
-        if not removed:
-            break
-    return {
-        marks[item]: reason
-        for item, reason in enumerate(reasons)
-        if alive[item] and reason is not None
-    }
+                # Every mark whose judgment read this one may now differ.
+                first = bisect_left(self.candidates, low)
+                for other in range(first, bisect_right(self.candidates, high)):
+                    dirty[other] = self.alive[other]
+            if not removed:
+                break
+        return {
+            self.candidates[item]: reason
+            for item, reason in enumerate(reasons)
+            if self.alive[item] and reason is not None
+        }
 
 
-def _kept_mark_reasons(text: str) -> dict[int, str]:
-    """Offsets of the directional marks to keep, with the reason for each."""
+def _kept_mark_reasons(text: str, context: _Context) -> dict[int, str]:
+    """Offsets of the directional marks to keep, with the reason for each.
+
+    Every mark is removed in a paragraph without right-to-left letters, and in
+    one that held embeddings, overrides, or isolates, since those are removed
+    and a mark that worked inside one could reorder the paragraph without it.
+    """
     kept: dict[int, str] = {}
-    if not any(mark in text for mark in _DIRECTIONAL_MARKS):
+    if not _MARK_PATTERN.search(text):
         return kept
+    budget = [_MARK_BUDGET]
+    cache: dict = {}
     for start, end in _paragraphs(text):
+        if not _MARK_PATTERN.search(text, start, end):
+            continue
         paragraph = text[start:end]
-        if any(mark in paragraph for mark in _DIRECTIONAL_MARKS):
-            for index, reason in _kept_marks_in_paragraph(paragraph).items():
-                kept[start + index] = reason
+        if any(control in paragraph for control in _EXPLICIT_DIRECTIONAL_CONTROLS):
+            continue
+        if not any(
+            character >= _FIRST_RIGHT_TO_LEFT
+            and character not in _DIRECTIONAL_MARKS
+            and _bidi_class(character) in ("R", "AL")
+            for character in paragraph
+        ):
+            continue
+        kept.update(_ParagraphMarks(text, start, end, context, budget, cache).judge())
     return kept
 
 
@@ -832,6 +1258,7 @@ class _Context(NamedTuple):
     previous_bases: list[str | None]
     next_bases: list[str | None]
     cjk_spaces: frozenset[int]
+    # Filled in once the marks are judged, which needs the other characters.
     kept_marks: dict[int, str]
 
 
@@ -932,12 +1359,8 @@ def _process(text: str) -> tuple[str, dict[str, object]]:
         raise TypeError("text must be a string")
 
     previous_bases, next_bases = _neighboring_bases(text)
-    context = _Context(
-        previous_bases,
-        next_bases,
-        _cjk_space_offsets(text),
-        _kept_mark_reasons(text),
-    )
+    context = _Context(previous_bases, next_bases, _cjk_space_offsets(text), {})
+    context = context._replace(kept_marks=_kept_mark_reasons(text, context))
     tag_sequence_offsets = _tag_sequence_offsets(text)
     findings: dict[tuple[str, str, str | None], dict[str, object]] = {}
     cleaned_characters: list[str] = []

@@ -5,6 +5,8 @@ to semantic versioning.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-08
+
 ### Changed
 
 - Text hygiene policy version 3 (manifests report `"policy_version": 3`)
@@ -31,10 +33,9 @@ to semantic versioning.
   - Unassigned code points take their Unicode default direction, characters
     the helper removes no longer influence what it keeps, and cleaning the
     cleaned copy changes nothing whenever both cleanings finish judging
-    within the budget.
-    When the budget runs out, the paragraph being judged and every later one
-    keep none of their marks, and so does a paragraph whose marks still lack
-    current verdicts after 8 passes.
+    within the budget. When the budget runs out, the paragraph being judged
+    and every later one keep none of their marks, and so does a paragraph
+    whose marks still lack current verdicts after 8 passes.
 - Python 3.11 is the documented minimum, and CI tests 3.11 and 3.14, because
   Python 3.10 reaches end of life in October 2026.
 - `SKILL.md` stops the pass on any non-zero exit from the hygiene helper, not
@@ -47,11 +48,12 @@ to semantic versioning.
 ### Added
 
 - An opt-in check of the directional-mark rule against GNU FriBidi
-  (`VOICEPRINT_FRIBIDI=1`), eval 14 for typographic spaces, a test that
-  cleaning is stable, and repository tests that keep the documented Python
-  minimum consistent, keep adapters free of maintainer workflow, and keep the
-  repository's own text free of characters the hygiene helper would act
-  on.
+  (`VOICEPRINT_FRIBIDI=1`), eval 14 for typographic spaces, tests that
+  cleaning is stable, that each judgment checks each bracket once, and that
+  a text keeps only fully judged marks wherever the budget runs out, and
+  repository tests that keep the documented Python minimum consistent, keep
+  adapters free of maintainer workflow, and keep the repository's own text
+  free of characters the hygiene helper would act on.
 
 ## [1.5.2] - 2026-10-08
 
@@ -397,7 +399,8 @@ First stable release.
   a vendoring sync obligation that the standalone skills do not, so it needs a
   sync tool and a check that the obligation is being met.
 
-[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.2...HEAD
+[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.4.0...v1.5.0

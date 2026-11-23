@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-labelledby="t d">
+  <title id="t">voiceprint one-pass rule</title>
+  <desc id="d">The product rule: diagnose once, clean and rewrite once, residual once. No feedback loop into another rewrite.</desc>
+  <style>
+    .sans{font-family:"Avenir Next","Helvetica Neue",Helvetica,Arial,sans-serif}
+    .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+  </style>
+  <rect x="0.5" y="0.5" width="1199" height="359" rx="10" fill="#0E141B" stroke="#243140"/>
+  <path d="M1 44H1199V11a10 10 0 0 0-10-10H11A10 10 0 0 0 1 11Z" fill="#162029"/>
+  <line x1="1" y1="44" x2="1199" y2="44" stroke="#243140"/>
+  <text x="32" y="28" class="mono" font-size="13" font-weight="700" fill="#4FC3F7" letter-spacing="1.5">ONE PASS RULE</text>
+  <text x="1168" y="28" class="mono" font-size="13" fill="#7F91A3" text-anchor="end">NO SCORE-CHASING LOOP</text>
+
+  <g transform="translate(48 80)">
+    <rect width="260" height="100" rx="4" fill="#162029" stroke="#4FC3F7"/>
+    <text x="24" y="42" class="mono" font-size="14" font-weight="700" fill="#4FC3F7">STEP 1</text>
+    <text x="24" y="74" class="sans" font-size="22" font-weight="700" fill="#E8F0F7">Diagnose</text>
+  </g>
+  <path d="M320 130H400" stroke="#4FC3F7" stroke-width="2" marker-end="url(#arrow)"/>
+  <g transform="translate(412 80)">
+    <rect width="260" height="100" rx="4" fill="#162029" stroke="#4FC3F7"/>
+    <text x="24" y="42" class="mono" font-size="14" font-weight="700" fill="#4FC3F7">STEP 2</text>
+    <text x="24" y="74" class="sans" font-size="22" font-weight="700" fill="#E8F0F7">Clean + Rewrite</text>
+  </g>
+  <path d="M684 130H764" stroke="#4FC3F7" stroke-width="2"/>
+  <g transform="translate(776 80)">
+    <rect width="376" height="100" rx="4" fill="#162029" stroke="#4FC3F7"/>
+    <text x="24" y="42" class="mono" font-size="14" font-weight="700" fill="#4FC3F7">STEP 3</text>
+    <text x="24" y="74" class="sans" font-size="22" font-weight="700" fill="#E8F0F7">Report residual. Stop.</text>
+  </g>
+
+  <g transform="translate(48 220)">
+    <rect width="1104" height="100" rx="4" fill="#162029" stroke="#243140"/>
+    <text x="32" y="42" class="mono" font-size="13" font-weight="700" fill="#7F91A3" letter-spacing="1.5">FORBIDDEN</text>
+    <text x="32" y="72" class="sans" font-size="20" fill="#E8F0F7">Residual score low? Spans remain? Tempted to rewrite again?</text>
+    <text x="900" y="72" class="mono" font-size="20" font-weight="700" fill="#4FC3F7" text-anchor="end">NO. STOP.</text>
+  </g>
+</svg>

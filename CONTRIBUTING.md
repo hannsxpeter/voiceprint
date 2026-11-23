@@ -1,7 +1,8 @@
 # Contributing to voiceprint
 
 This guide is for changing voiceprint itself. To use the skill, read the
-[README](README.md).
+[README](README.md). Deep Unicode hygiene policy lives in
+[docs/hygiene.md](docs/hygiene.md).
 
 ## Checks
 
@@ -19,12 +20,18 @@ pass on a branch that is up to date with `main`. If you change the Python
 versions CI tests, update the ruleset's required checks to the new job names
 before merging, or the pull request cannot merge.
 
+Before an npm publish, also run:
+
+```sh
+npm run pack:check
+```
+
 Three checks are opt-in because they need extra files, an extra tool, or a
 quiet machine:
 
 - The Unicode data check compares the pinned emoji tables and
-  default-ignorable handling with the official Unicode 17.0 files. The
-  README's "Deterministic text hygiene" section has the commands.
+  default-ignorable handling with the official Unicode 17.0 files. Commands
+  are in [docs/hygiene.md](docs/hygiene.md).
 - The bidirectional check compares directional-mark decisions with GNU
   FriBidi:
 
@@ -34,13 +41,13 @@ quiet machine:
 
 - The release benchmark holds cleanup of 100,000 code points of letters and
   zero-width spaces to a 200 ms p95 (`VOICEPRINT_RELEASE_BENCHMARK=1`, also
-  in the README).
+  in docs/hygiene.md).
 
 ## Changing hygiene behavior
 
 A change to what `scripts/text_hygiene.py` removes, normalizes, or keeps
 bumps `POLICY_VERSION`, comes with exact fixtures in
-`tests/test_text_hygiene.py`, and is described in the README and the
+`tests/test_text_hygiene.py`, and is described in `docs/hygiene.md` and the
 changelog. Write invisible characters in source as escapes, never as literal
 characters; a repository test fails if tracked text outside `vendor/`
 contains anything the helper would act on.
@@ -48,14 +55,32 @@ contains anything the helper would act on.
 ## Vendored skills
 
 Never edit anything under `vendor/`. Land the change in the upstream repo,
-then re-sync with `scripts/sync-upstream` as the README's "Sync procedure"
-describes. `scripts/check-upstream-freshness` reports when a re-sync is due.
+then re-sync:
+
+```sh
+scripts/sync-upstream
+```
+
+By default it reads sibling repos `../humanizer` and
+`../authenticity-check`. Override with arguments or `HUMANIZER_REPO` /
+`AUTHENTICITY_CHECK_REPO`. The script vendors each skill's `SKILL.md` and
+tracked `references/*.md` from upstream HEAD, stamps headers, and swaps the
+tree only after every file succeeds. Then:
+
+```sh
+scripts/check
+git add vendor && git commit
+```
+
+`scripts/check-upstream-freshness` reports when a re-sync is due. If the
+Actions tab shows `upstream-freshness` disabled after 60 days of inactivity,
+re-enable it with `gh workflow enable upstream-freshness.yml`.
 
 ## Releases
 
-1. Set the new version in `SKILL.md` (`metadata.version`) and in the README
-   badge, and move the `[Unreleased]` changelog entries under it with the
-   release date and a compare link.
+1. Set the new version in `SKILL.md` (`metadata.version`), `package.json`, and
+   the README badge, and move the `[Unreleased]` changelog entries under it
+   with the release date and a compare link.
 2. Run the release benchmark through the Godpowers CLI, so its printed p95
    is kept with the release evidence:
 
@@ -63,7 +88,8 @@ describes. `scripts/check-upstream-freshness` reports when a re-sync is due.
    node ~/.claude/godpowers/bin/godpowers.js verify "VOICEPRINT_RELEASE_BENCHMARK=1 python3 -m unittest -v tests.test_text_hygiene.TextHygieneApiTests.test_p95_is_within_budget_for_one_hundred_thousand_code_points"
    ```
 
-3. Merge the release pull request once CI passes.
+3. Merge the release pull request once CI passes (or land directly on main
+   when releasing from a maintainer checkout).
 4. Tag the merge commit and push the tag:
 
    ```sh
@@ -72,7 +98,13 @@ describes. `scripts/check-upstream-freshness` reports when a re-sync is due.
    ```
 
 5. Publish a GitHub release for the tag from the changelog entry.
-6. Record the release in `.godpowers/STATE.md` in a follow-up pull request.
+6. Publish the npm package (token via env, never committed):
+
+   ```sh
+   npm publish --access public
+   ```
+
+7. Record the release in `.godpowers/STATE.md` in a follow-up pull request.
 
 ## Project state
 

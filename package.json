@@ -1,0 +1,66 @@
+{
+  "name": "@hxp-tools/voiceprint",
+  "version": "1.7.0",
+  "description": "One-pass prose authenticity for AI coding tools. Diagnose, clean, rewrite once, report. Never a loop.",
+  "bin": {
+    "voiceprint": "bin/voiceprint.js"
+  },
+  "scripts": {
+    "start": "node bin/voiceprint.js",
+    "test": "python3 -m unittest discover -s tests -v",
+    "pack:check": "npm pack --dry-run",
+    "release:check": "sh scripts/check && npm run pack:check",
+    "prepublishOnly": "npm run release:check"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agent-skills",
+    "ai-agents",
+    "ai-writing",
+    "authenticity",
+    "claude-code",
+    "codex",
+    "cursor",
+    "deslop",
+    "gemini-cli",
+    "humanizer",
+    "prose-editing",
+    "skill",
+    "text-hygiene",
+    "unicode",
+    "writing"
+  ],
+  "author": "hannsxpeter",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hannsxpeter/voiceprint.git"
+  },
+  "homepage": "https://github.com/hannsxpeter/voiceprint#readme",
+  "bugs": {
+    "url": "https://github.com/hannsxpeter/voiceprint/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "install.sh",
+    "assets/",
+    "docs/",
+    "scripts/text_hygiene.py",
+    "vendor/",
+    "SKILL.md",
+    "AGENTS.md",
+    "GEMINI.md",
+    ".cursor/rules/voiceprint.mdc",
+    ".github/copilot-instructions.md",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "!**/__pycache__",
+    "!**/*.pyc"
+  ]
+}

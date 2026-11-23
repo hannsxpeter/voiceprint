@@ -5,6 +5,25 @@ to semantic versioning.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-23
+
+### Added
+
+- Gamified product surface: `assets/` hero, quest map, one-pass rule, and
+  achievements graphics, with a short product README framed as Diagnose /
+  Clean+Rewrite / Residual.
+- npm package `@hxp-tools/voiceprint` with `npx` installer
+  (`bin/voiceprint.js`, `install.sh`) for Claude Code, Codex, Cursor, and
+  Windsurf skill directories.
+- `docs/hygiene.md` for the deep Unicode hygiene reference previously embedded
+  in the README.
+
+### Changed
+
+- README is a product page; sync procedure and maintainer checks stay in
+  `CONTRIBUTING.md`. Hygiene policy details moved to `docs/hygiene.md`.
+- Repository version check also requires `package.json` to match `SKILL.md`.
+
 ## [1.6.0] - 2026-10-08
 
 ### Changed
@@ -402,7 +421,8 @@ First stable release.
   a vendoring sync obligation that the standalone skills do not, so it needs a
   sync tool and a check that the obligation is being met.
 
-[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/hannsxpeter/voiceprint/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/hannsxpeter/voiceprint/compare/v1.5.0...v1.5.1

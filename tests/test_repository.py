@@ -145,9 +145,12 @@ class RepositoryConsistencyTests(unittest.TestCase):
         released = re.findall(
             r"^## \[(\d+\.\d+\.\d+)\]", read("CHANGELOG.md"), re.MULTILINE
         )
+        package = json.loads(read("package.json"))
 
         self.assertIn(f"badge/version-{version}-", read("README.md"))
         self.assertEqual(released[0], version)
+        self.assertEqual(package["version"], version)
+        self.assertEqual(package["name"], "@hxp-tools/voiceprint")
 
     def test_adapters_route_to_the_same_contract(self):
         phrases = (
